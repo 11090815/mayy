@@ -1,0 +1,6 @@
+CSP:
+  Kind: sw
+  KeyStorePath: testFile/keys
+  SecurityLevel: 256
+  HashFamily: SHA2
+  ReadOnly: false
