@@ -1,21 +1,31 @@
 package softimpl_test
 
 import (
+	"context"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/11090815/mayy/csp/interfaces"
 	"github.com/11090815/mayy/csp/mocks"
 	"github.com/11090815/mayy/csp/softimpl"
 	"github.com/11090815/mayy/csp/softimpl/aes"
 	"github.com/11090815/mayy/csp/softimpl/config"
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
 	"github.com/11090815/mayy/csp/softimpl/hash"
+	"github.com/11090815/mayy/csp/softimpl/tlsca"
+	"github.com/11090815/mayy/errors"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/sha3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func TestBasic(t *testing.T) {
@@ -149,4 +159,67 @@ func TestBasic(t *testing.T) {
 	plaintext, err := impl.Decrypt(k128, ciphertext, &aes.AESCBCPKCS7ModeOpts{})
 	require.NoError(t, err)
 	require.Equal(t, msg, plaintext)
+}
+
+func TestTLSCA(t *testing.T) {
+	errors.SetTrace()
+	ks := mocks.NewMockKeyStore()
+	impl, err := softimpl.NewSoftCSPImpl(ks)
+	require.NoError(t, err)
+
+	softimpl.RegisterWidget(impl.(*softimpl.SoftCSPImpl), reflect.TypeOf(&tlsca.TLSCAGenOpts{}), tlsca.NewTLSCAGenerator())
+
+	ca, err := impl.CAGen(&tlsca.TLSCAGenOpts{Level: 256})
+	require.NoError(t, err)
+
+	srv := createTLSService(t, ca, "127.0.0.1")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go srv.Serve(listener)
+	defer srv.Stop()
+	defer listener.Close()
+
+	// 构建客户端，传入的参数为客户端的证书密钥对，基于客户端的证书和CA的证书，
+	// 尝试构建与server之间的连接
+	probeTLS := func(kp interfaces.CertKeyPair) error {
+		tlsCfg := &tls.Config{
+			RootCAs:      x509.NewCertPool(),
+			Certificates: []tls.Certificate{kp.TLSCert()}, // 提供客户端的证书给 server 去验证客户端的身份
+		}
+		tlsCfg.RootCAs.AppendCertsFromPEM(ca.CertBytes()) // 利用 CA 的证书验证 server 的证书
+		tlsOpts := grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg))
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		conn, err := grpc.DialContext(ctx, listener.Addr().String(), tlsOpts, grpc.WithBlock())
+		if err != nil {
+			return err
+		}
+		conn.Close()
+		return nil
+	}
+
+	clientKP, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
+	require.NoError(t, probeTLS(clientKP))
+
+	otherCA, _ := impl.CAGen(&tlsca.TLSCAGenOpts{Level: 384})
+	fmt.Println(string(otherCA.CertBytes()))
+	fmt.Println(string(ca.CertBytes()))
+	otherClientKP, err := otherCA.NewClientCertKeyPair()
+	require.NoError(t, err)
+	require.Error(t, probeTLS(otherClientKP))
+}
+
+func createTLSService(t *testing.T, ca interfaces.CA, host string) *grpc.Server {
+	kp, err := ca.NewServerCertKeyPair(host)
+	require.NoError(t, err)
+
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{kp.TLSCert()},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    x509.NewCertPool(),
+	}
+	tlsConf.ClientCAs.AppendCertsFromPEM(ca.CertBytes())
+	return grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConf)))
 }

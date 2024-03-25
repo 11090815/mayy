@@ -2,9 +2,10 @@ package factory
 
 import (
 	"os"
+	"path/filepath"
 
+	"github.com/11090815/mayy/config"
 	"github.com/11090815/mayy/errors"
-	"github.com/spf13/viper"
 )
 
 type FactoryOpts struct {
@@ -15,21 +16,13 @@ type FactoryOpts struct {
 	ReadOnly      bool   `json:"read_only" yaml:"ReadOnly"`
 }
 
-func ReadConfig(path string) (*FactoryOpts, error) {
-	cfgFile, err := os.Open(path)
-	if err != nil {
-		return nil, errors.NewErrorf("cannot read config file, the error is \"%s\"", err.Error())
-	}
-
-	viper.SetConfigType("yaml")
-	if err = viper.ReadConfig(cfgFile); err != nil {
-		return nil, errors.NewErrorf("cannot read config file, the error is \"%s\"", err.Error())
-	}
+func ReadConfig() (*FactoryOpts, error) {
+	cfg := config.GetConfig()
 
 	opts := &FactoryOpts{}
-	if err = viper.UnmarshalKey("csp", opts); err != nil {
+	if err := cfg.UnmarshalKey("csp", opts); err != nil {
 		return nil, errors.NewErrorf("cannot read config file, the error is \"%s\"", err.Error())
 	}
-
+	opts.KeyStorePath = filepath.Join(os.Getenv("MAYY_HOME"), opts.KeyStorePath)
 	return opts, nil
 }

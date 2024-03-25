@@ -21,6 +21,7 @@ type SoftCSPImpl struct {
 	Signers       map[reflect.Type]interfaces.Signer
 	Verifiers     map[reflect.Type]interfaces.Verifier
 	Hashers       map[reflect.Type]interfaces.Hasher
+	CAGenerators  map[reflect.Type]interfaces.CAGenerator
 }
 
 func NewSoftCSPImpl(ks interfaces.KeyStore) (interfaces.CSP, error) {
@@ -38,6 +39,7 @@ func NewSoftCSPImpl(ks interfaces.KeyStore) (interfaces.CSP, error) {
 		Signers:       make(map[reflect.Type]interfaces.Signer),
 		Verifiers:     make(map[reflect.Type]interfaces.Verifier),
 		Hashers:       make(map[reflect.Type]interfaces.Hasher),
+		CAGenerators:  make(map[reflect.Type]interfaces.CAGenerator),
 	}
 
 	return impl, nil
@@ -220,6 +222,19 @@ func (csp *SoftCSPImpl) Decrypt(key interfaces.Key, ciphertext []byte, opts inte
 	return decrypter.Decrypt(key, ciphertext, opts)
 }
 
+func (csp *SoftCSPImpl) CAGen(opts interfaces.CAGenOpts) (interfaces.CA, error) {
+	if opts == nil {
+		return nil, errors.NewError("invalid opts, nil opts")
+	}
+
+	cg, found := csp.CAGenerators[reflect.TypeOf(opts)]
+	if !found {
+		return nil, errors.NewErrorf("cannot find out the CA generator for the opts of type \"%T\"", opts)
+
+	}
+	return cg.CAGen(opts)
+}
+
 func RegisterWidget(csp *SoftCSPImpl, t reflect.Type, w interface{}) error {
 	if t == nil {
 		return errors.NewError("invalid type, nil type")
@@ -246,6 +261,8 @@ func RegisterWidget(csp *SoftCSPImpl, t reflect.Type, w interface{}) error {
 		csp.Decrypters[t] = ww
 	case interfaces.Hasher:
 		csp.Hashers[t] = ww
+	case interfaces.CAGenerator:
+		csp.CAGenerators[t] = ww
 	default:
 		return errors.NewErrorf("widget type \"%T\" is not recognized", w)
 	}

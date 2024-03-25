@@ -2,6 +2,8 @@ package interfaces
 
 import (
 	"crypto"
+	"crypto/tls"
+	"crypto/x509"
 	"hash"
 )
 
@@ -37,6 +39,47 @@ type CSP interface {
 
 	// GetKey 给定密钥的主体标识符，返回此密钥本身。
 	GetKey(ski []byte) (key Key, err error)
+
+	CAGen(opts CAGenOpts) (CA, error)
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type CA interface {
+	// CertBytes 返回 CA 的证书的 PEM 格式编码的字节切片。
+	CertBytes() []byte
+
+	// NewIntermediateCA 创建一个中级 CA。
+	NewIntermediateCA() (CA, error)
+
+	// NewClientCertKeyPair CA 调用此方法为 client 生成一个证书和对应的密钥，证书由 CA 签署，
+	// 然后证书被用来验证 client。
+	NewClientCertKeyPair() (CertKeyPair, error)
+
+	// NewServerCertKeyPair CA 为 server 生成一个证书和对应的密钥。
+	NewServerCertKeyPair(hosts ...string) (CertKeyPair, error)
+
+	// Signer 返回此证书用来给其他证书进行签名的 signer。
+	Signer() crypto.Signer
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type CertKeyPair interface {
+	// Cert 返回证书的 PEM 格式编码的字节切片。
+	Cert() []byte
+
+	// Key Cert方法返回的证书内包含证书的公钥，此方法返回的私钥与证书内的公钥相对应，
+	// 返回的字节切片是私钥的 PEM 格式编码。
+	Key() []byte
+
+	// Signer 返回签名私钥，Key 方法返回的字节切片就是此签名密钥。
+	Signer() crypto.Signer
+
+	// TLSCert 将 Cert 方法返回的字节切片解析后即可得到 x509 证书，然后此方法可返回该证书。
+	TLSCert() tls.Certificate
+
+	X509Cert() *x509.Certificate
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -120,4 +163,14 @@ type EncrypterOpts interface {
 
 // DecrypterOpts 目前此接口内没有定义任何方法，是个空接口。
 type DecrypterOpts interface {
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type CAGenOpts interface {
+	// SecurityLevel 返回安全等级，一般是 256 或者是 384。
+	SecurityLevel() int
+
+	// Algorithm 返回生成证书的算法名称。
+	Algorithm() string
 }

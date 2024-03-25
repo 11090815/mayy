@@ -10,10 +10,10 @@ import (
 )
 
 func TestCreatCSP(t *testing.T) {
-	opts, err := factory.ReadConfig("testFile/config.yml")
+	opts, err := factory.ReadConfig()
 	require.NoError(t, err)
 
-	factory := factory.NewCSPFactory(opts)
+	factory := factory.NewCSPFactoryWithOpts(opts)
 
 	csp, err := factory.CreateFactory()
 	require.NoError(t, err)

@@ -1,0 +1,12 @@
+CSP:
+  Kind: sw
+  KeyStorePath: testFile/keys
+  SecurityLevel: 256
+  HashFamily: SHA2
+  ReadOnly: false
+
+LOG:
+  # 存储日志文件的目录地址
+  DirPath: output/logs
+  # 单个日志文件所能存储的最大字节数：1MB
+  SingleFileMaxSize: 1048576

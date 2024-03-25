@@ -42,3 +42,9 @@ type Hasher interface {
 	Hash(msg []byte, opts HashOpts) ([]byte, error)
 	GetHash(opts HashOpts) (hash.Hash, error)
 }
+
+/* ------------------------------------------------------------------------------------------ */
+
+type CAGenerator interface {
+	CAGen(opts CAGenOpts) (CA, error)
+}

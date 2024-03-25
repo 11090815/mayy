@@ -21,7 +21,7 @@ type CSPFactory struct {
 	opts *FactoryOpts
 }
 
-func NewCSPFactory(opts *FactoryOpts) *CSPFactory {
+func NewCSPFactoryWithOpts(opts *FactoryOpts) *CSPFactory {
 	return &CSPFactory{opts: opts}
 }
 
