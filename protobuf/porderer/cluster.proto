@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/porderer";
+
+package porderer;
+
+import "pcommon/common.proto";
+
+service Cluster {
+    rpc Step(stream StepRequest) returns (stream StepResponse);
+}
+
+// StepRequest 用于发送共识请求和转发交易请求。
+message StepRequest {
+    oneof payload {
+        // ConsensusReq 用于传递共识相关的请求。
+        ConsensusRequest consensus_req = 1;
+        // SubmitReq 用于转发交易请求，当一个节点收到一个交易时，它将该交易封装在 SubmitRequest 中，并发送给
+        // 其他节点进行处理和验证。
+        SubmitRequest submit_reqt = 2;
+    }
+}
+
+// StepResponse 用于接收交易处理结果。
+message StepResponse {
+    oneof payload {
+        // SubmitRes 用于返回对交易的响应结果，当一个节点完成对交易的验证和处理后，它将被封装在 SubmitResponse
+        // 中，并发送给相关的节点。
+        SubmitResponse submit_res = 1;
+    }
+}
+
+// ConsensusRequest 用于共识算法中的消息传递，它将包含共识相关数据的有效载荷和数据发送给集群成员。
+message ConsensusRequest {
+    // Channel 表示消息所属的通道。
+    string channel = 1;
+    // Payload 用于携带共识数据的有效载荷。
+    bytes payload = 2;
+    // Metadata 用于携带与共识相关的元数据。
+    bytes metadata = 3;
+}
+
+// SubmitRequest 用于将待排序的交易发送给排序服务进行处理和排序。
+message SubmitRequest {
+    // Channel 表示交易所属的通道。
+    string channel = 1;
+    // LastValidationSeq 表示发送者验证该消息时的最后配置序列号。
+    uint64 last_validation_seq = 2;
+    // Payload 封装了要转发给 cluster 成员的交易。
+    pcommon.Envelope payload = 3;
+}
+
+// SubmitResponse 用于返回交易处理结果。
+message SubmitResponse {
+    // Channel 表示交易处理响应消息所属的通道。
+    string channel = 1;
+    // Status 指示交易处理结果是成功还是失败。
+    pcommon.Status status = 2;
+    // Info 是一个字符串，包含交易处理结果的其他附加信息。
+    string info = 3;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --go_out=plugins=grpc,paths=source_relative:. cluster.proto

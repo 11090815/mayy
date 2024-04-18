@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/porderer";
+
+package porderer;
+
+import "pcommon/common.proto";
+import "github.com/google/protobuf/timestamp.proto";
+
+// ClusterNodeService 该服务用于集群节点之间的通信和交互。具体来说，该服务使用流式传输（stream）的，在客
+// 户端和服务器之间建立一个双向的通信管道。客户端可以通过该管道向服务器发送 ClusterNodeServiceStepRequest
+// 请求，并从服务器接收 ClusterNodeServiceStepResponse 响应。这种流式传输的设计可以满足一些需要实时、持续
+// 交互的场景，例如在共识过程中，集群节点之间需要相互发送消息、请求和响应，以达到共识的一致性。通过流式传输，
+// 可以实现高效的双向通信，高性能和效。
+service ClusterNodeService {
+    rpc Step(stream ClusterNodeServiceStepRequest) returns (stream ClusterNodeServiceStepResponse);
+}
+
+// ClusterNodeServiceStepRequest 用于封装发送给 cluster 成员的请求，其中的 Payload 字段，
+// 定义了三种可能的消息：NodeConsensusRequest、NodeTransactionOrderRequest、NodeAuthRequest。
+message ClusterNodeServiceStepRequest {
+    oneof payload {
+        // NodeConsensusReq 用于在 cluster 成员之间发送共识请求。
+        NodeConsensusRequest node_consensus_req = 1;
+        // NodeTransactionOrderReq 用于传递交易的消息。
+        NodeTransactionOrderRequest node_transaction_req = 2;
+        // NodeAuthReq 用于对发起 stream 流的成员进行身份验证的请求。
+        NodeAuthRequest node_auth_req = 3;
+    }
+}
+
+// ClusterNodeServiceStepResponse 这个消息结构体用于接收来自 cluster 成员的响应，其中的 Payload 字段
+// 只定义了一种可能的消息：TransactionOrderResponse。
+message ClusterNodeServiceStepResponse {
+    oneof payload {
+        // TransactionOrderRes 处理交易的响应消息。
+        TransactionOrderResponse transaction_order_res = 1;
+    }
+}
+
+// NodeConsensusRequest 这是一个特定于共识的消息，用于发送给 cluster 成员。
+message NodeConsensusRequest {
+    // Payload 用于传输共识消息的具体内容。
+    bytes payload = 1;
+    // Metadata 用于传输与共识相关的元数据。
+    bytes metadata = 2;
+}
+
+// NodeTransactionOrderRequest 用于包装需要进行排序的交易。
+message NodeTransactionOrderRequest {
+    // LastValidationSeq 表示发送者验证此消息的最后配置序列。
+    uint64 last_validation_seq = 1;
+    // Payload 包含要转发给 cluster 成员的交易。
+    pcommon.Envelope payload = 2;
+}
+
+// TransactionOrderResponse 用于向交易发送方反馈交易处理结果的信息。
+message TransactionOrderResponse {
+    // Channel 表示交易所属的通道。
+    string channel = 1;
+    // TxId 交易的 ID。
+    string tx_id = 2;
+    // Status 交易处理结果的状态码。
+    pcommon.Status status = 3;
+    // Info 包含有关交易处理结果的附加信息。
+    string info = 4;
+}
+
+// NodeAuthRequest 用于在 cluster 成员之间验证 stream 流。
+message NodeAuthRequest {
+    // Version 表示计算签名的字段版本。
+    uint32 version = 1;
+    // Signature 可以使用发起者的公钥进行验证的签名。
+    bytes signature = 2;
+    // Timestamp 指示请求的新鲜度，预期在响应者的本地时间范围。
+    google.protobuf.Timestamp timestamp = 3;
+    // FromId 表示连接发起者的数值标识符。
+    uint64 from_id = 4;
+    // ToId 表示正在连接的节点的数值标识符。
+    uint64 to_id = 5;
+    // SessionBinding 可以使用应用级协议进行验证的会话绑定。
+    bytes session_binding = 6;
+    // Channel 表示连接所属的通道。
+    string channel = 7;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --go_out=plugins=grpc,paths=source_relative:. clusterserver.proto

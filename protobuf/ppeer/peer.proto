@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "proposal.proto";
+
+service Endorser {
+    rpc ProcessProposal(SignedProposal) returns (ProposalResponse);
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=plugins=grpc,paths=source_relative:. peer.proto

@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer/plifecycle";
+
+package plifecycle;
+
+import "ppeer/collection.proto";
+
+// InstallChaincodeArgs 被用作 _lifecycle.InstallChaincode 方法的参数。
+message InstallChaincodeArgs {
+    // ChaincodeInstallPackage 链码安装包的字节流。这应该是一个序列化的 lifecycle.ChaincodePackage。
+    bytes chaincode_install_package = 1;
+}
+
+// InstallChaincodeResult _lifecycle.InstallChaincode 方法返回的消息。
+message InstallChaincodeResult {
+    // PackageId 安装链码包的 ID。
+    string package_id = 1;
+    // Label 链码的标签。
+    string label = 2;
+}
+
+// QueryInstalledChaincodeArgs 被用作 _lifecycle.QueryInstalledChaincode 方法的参数。
+message QueryInstalledChaincodeArgs {
+    // PackageId 是要查询的链码包的ID。
+    string package_id = 1;
+}
+
+// QueryInstalledChaincodeResult 是 _lifecycle.QueryInstalledChaincode 方法返回的消息。
+message QueryInstalledChaincodeResult {
+    // PackageId 是被查询的链码包的ID。
+    string package_id = 1;
+    // Label 被查询的链码的标签。
+    string label = 2;
+    // References 链码列表的映射。
+    map<string, References> references = 3;
+
+    message References {
+        repeated Chaincode chaincodes = 1;
+    }
+
+    message Chaincode {
+        // Name 链码的名称。
+        string name = 1;
+        // Version 链码的版本。
+        string version = 2;
+    }
+}
+
+// GetInstalledChaincodePackageArgs 结构体包含一个字段 PackageId，用于指定要获取的已安装链码的 ID
+message GetInstalledChaincodePackageArgs {
+    string package_id = 1;
+}
+
+// GetInstalledChaincodePackageResult 结构体包含一个字段 ChaincodeInstallPackage，用于存储已安装链码的安装包数据
+message GetInstalledChaincodePackageResult {
+    bytes chaincode_install_package = 1;
+}
+
+// QueryInstalledChaincodesArgs 结构体是查询已安装链码的参数，目前为空。在将来可能会扩展为具有其他参数的结构体。
+message QueryInstalledChaincodesArgs {}
+
+// QueryInstalledChaincodesResult 结构体是查询已安装链码的结果，包含了已安装链码的信息。它包含一个字段
+// InstalledChaincodes，用于存储已安装链码的列表。通过该结构体，可以查询已安装链码的信息，包括链码的安
+// 装包 ID、标签以及引用了该链码的链码定义的通道名称和链码版本。这可以帮助在链码的管理和升级过程中了解链
+// 码的使用情况。
+message QueryInstalledChaincodesResult {
+    // InstalledChaincode 结构体包含了一个已安装链码的信息。它包含了 PackageId 字段，表示链码的安装包 ID，Label 字段
+    // 表示链码的标签。References 字段是一个 map，用于存储引用了该链码包的链码定义，其中 key 为通道名称，value 为
+    // References 结构体的实例。
+    message InstalledChaincode {
+        string package_id = 1;
+        string label = 2;
+        map<string, References> references = 3;
+    }
+
+    // References 结构体包含一个字段 Chaincodes，表示引用了该链码包的链码定义列表。
+    message References {
+        repeated Chaincode chaincodes = 1;
+    }
+
+    // Chaincode 结构体包含了一个引用链码的信息，包含 Name 字段表示链码名称，Version 字段表示链码版本。
+    message Chaincode {
+        string name = 1;
+        string version = 2;
+    }
+
+    repeated InstalledChaincode installed_chaincodes = 1;
+}
+
+// ApproveChaincodeDefinitionForMyOrgArgs 是用作 _lifecycle.ApproveChaincodeDefinitionForMyOrg 函数的参数消息。它包含了用于批准链码定义的各种属性。
+message ApproveChaincodeDefinitionForMyOrgArgs {
+    // Sequence 表示链码定义的序列号。
+    int64 sequence = 1;
+    // Name 表示链码的名称。
+    string name = 2;
+    // Version 表示链码的版本。
+    string version = 3;
+    // EndorsementPlugin 表示链码的背书插件。
+    string endorsement_plugin = 4;
+    // ValidationPlugin 表示链码的验证插件。
+    string validation_plugin = 5;
+    // ValidationParameter 表示链码的验证参数。
+    bytes validation_parameter = 6;
+    // Collections 表示链码的集合配置包。
+    ppeer.CollectionConfigPackage collections = 7;
+    // InitRequired 表示链码是否需要初始化。
+    bool init_required = 8;
+    // Source 表示链码来源。
+    ChaincodeSource source = 9;
+}
+
+// ChaincodeSource 结构体表示链码的来源信息。
+message ChaincodeSource {
+    // Unavailable 表示链码的来源不可用。
+    message Unavailable {}
+
+    // Local 表示链码的来源是本地，需要提供链码包的 ID。
+    message Local {
+        string package_id = 1;
+    }
+
+    oneof Type {
+        Unavailable unavailable = 1;
+        Local local_package = 2;
+    }
+}
+
+// ApproveChaincodeDefinitionForMyOrgResult 该消息是 _lifecycle.ApproveChaincodeDefinitionForMyOrg 方法返回的结果消息。
+// 目前该消息为空，但未来可能会扩展其内容。
+message ApproveChaincodeDefinitionForMyOrgResult {} 
+
+// CommitChaincodeDefinitionArgs 该结构体用作 _lifecycle.CommitChaincodeDefinition 方法的参数。
+message CommitChaincodeDefinitionArgs {
+    // Sequence 表示链码定义的序列号。
+    int64 sequence = 1;
+    // Name 表示链码的名称。
+    string name = 2;
+    // Version 表示链码的版本号。
+    string version = 3;
+    // EndorsementPlugin 表示链码的背书插件。
+    string endorsement_plugin = 4;
+    // ValidationPlugin 表示链码的验证插件。
+    string validation_plugin = 5;
+    // ValidationParameter 表示链码的验证参数。
+    bytes validation_parameter = 6;
+    // Collections 表示链码的集合配置包。
+    ppeer.CollectionConfigPackage collections = 7;
+    // InitRequired 表示链码是否需要初始化。
+    bool init_required = 8;
+}
+
+// CommitChaincodeDefinitionResult 该结构体是通过 _lifecycle.CommitChaincodeDefinition 方法返回的结果消息。
+// 目前该消息为空，但未来可能会扩展其内容。
+message CommitChaincodeDefinitionResult {}
+
+// CheckCommitReadinessArgs 该结构体用作 _lifecycle.CheckCommitReadiness 方法的参数。
+message CheckCommitReadinessArgs {
+    // Sequence 表示链码定义的序列号。
+    int64 sequence = 1;
+    // Name 表示链码的名称。
+    string name = 2;
+    // Version 表示链码的版本号。
+    string version = 3;
+    // EndorsementPlugin 表示链码的背书插件。
+    string endorsement_plugin = 4;
+    // ValidationPlugin 表示链码的验证插件。
+    string validation_plugin = 5;
+    // ValidationParameter 表示链码的验证参数。
+    bytes validation_parameter = 6;
+    // Collections 表示链码的集合配置包。
+    ppeer.CollectionConfigPackage collections = 7;
+    // InitRequired 表示链码是否需要初始化。
+    bool init_required = 8;
+}
+
+// CheckCommitReadinessResult 该结构体被用于调用 _lifecycle.CheckCommitReadiness 方法时返回的结果消息。
+message CheckCommitReadinessResult {
+    // Approvals 该映射（map），将组织（orgs）与对提供的定义（args）的批准（true/false）对应起来。
+    // 通过查询该结果，可以判断各个组织是否已经批准了特定的链码定义。
+    map<string, bool> approvals = 1;
+}
+
+// QueryApprovedChaincodeDefinitionArgs 该结构体被用作 _lifecycle.QueryApprovedChaincodeDefinition 方法的参数。
+// 它包含了查询已批准的链码定义所需的信息，包括链码名称（name）和序列号（sequence）。
+message QueryApprovedChaincodeDefinitionArgs {
+    string name = 1;
+    int64 sequence = 2;
+}
+
+message QueryApprovedChaincodeDefinitionResult {
+    // Sequence 表示链码定义的序列号。
+    int64 sequence = 1;
+    // Version 表示链码的版本。
+    string version = 2;
+    // EndorsementPlugin 表示链码的背书插件。
+    string endorsement_plugin = 3;
+    // ValidationPlugin 表示链码的验证插件。
+    string validation_plugin = 4;
+    // ValidationParameter 表示链码的验证参数。
+    bytes validation_parameter = 5;
+    // Collections 表示链码的集合配置包。
+    ppeer.CollectionConfigPackage collections = 6;
+    // InitRequired 表示链码是否需要初始化。
+    bool init_required = 7;
+    // Source 表示链码来源。
+    ChaincodeSource source = 8;
+}
+
+// QueryChaincodeDefinitionArgs 该消息用作 _lifecycle.QueryChaincodeDefinition 方法的参数。
+// 它包含了查询链码定义所需的信息，包括链码名称（name）。通过传递这些参数，可以查询特定链码定义信息。
+message QueryChaincodeDefinitionArgs {
+    string name = 1;
+}
+
+message QueryChaincodeDefinitionResult {
+    // Sequence 表示链码定义的序列号。
+    int64 sequence = 1;
+    // Version 表示链码的版本。
+    string version = 2;
+    // EndorsementPlugin 表示链码的背书插件。
+    string endorsement_plugin = 3;
+    // ValidationPlugin 表示链码的验证插件。
+    string validation_plugin = 4;
+    // ValidationParameter 表示链码的验证参数。
+    bytes validation_parameter = 5;
+    // Collections 表示链码的集合配置包。
+    ppeer.CollectionConfigPackage collections = 6;
+    // InitRequired 表示链码是否需要初始化。
+    bool init_required = 7;
+    // Approvals 该映射（map），将组织（orgs）与对提供的定义（args）的批准（true/false）对应起来。
+    // 通过查询该结果，可以判断各个组织是否已经批准了特定的链码定义。
+    map<string, bool> approvals = 8;
+}
+
+// QueryChaincodeDefinitionsArgs 该结构体用作 _lifecycle.QueryChaincodeDefinitions 方法的参数。
+// 它为空消息，没有任何字段。通过传递该参数，可以查询所有已定义的链码的信息。
+message QueryChaincodeDefinitionsArgs {}
+
+// QueryChaincodeDefinitionResult 该消息作为 _lifecycle.QueryChaincodeDefinitions 方法返回的结果消息。
+message QueryChaincodeDefinitionsResult {
+    message ChaincodeDefinition {
+        // Sequence 表示链码定义的序列号。
+        int64 sequence = 1;
+        // Name 表示链码的名称。
+        string name = 2;
+        // Version 表示链码的版本号。
+        string version = 3;
+        // EndorsementPlugin 表示链码的背书插件。
+        string endorsement_plugin = 4;
+        // ValidationPlugin 表示链码的验证插件。
+        string validation_plugin = 5;
+        // ValidationParameter 表示链码的验证参数。
+        bytes validation_parameter = 6;
+        // Collections 表示链码的集合配置包。
+        ppeer.CollectionConfigPackage collections = 7;
+        // InitRequired 表示链码是否需要初始化。
+        bool init_required = 8;
+    }
+
+    repeated ChaincodeDefinition chaincode_definitions = 1;
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --proto_path=$MAYY_HOME/protobuf/ppeer --go_out=,paths=source_relative:. lifecycle.proto

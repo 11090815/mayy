@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "pcommon/common.proto";
+import "pledger/rwset/rwset.proto";
+import "chaincode_event.proto";
+import "transaction.proto";
+
+// FilteredBlock 表示过滤后的区块。
+message FilteredBlock {
+    // ChannelId 表示区块所属的通道的标识符。
+    string channel_id = 1;
+    // Number 表示该区块在区块链中的位置。
+    uint64 number = 2;
+    // FilteredTransactions 表示过滤后的区块中包含的过滤后的交易列表。
+    repeated FilteredTransaction filtered_transactions = 3;
+}
+
+// FilteredTransaction 表示过滤后的交易。
+message FilteredTransaction {
+    // Txid 表示交易的唯一标识符。
+    string txid = 1;
+    // Type 表示交易的类型
+    pcommon.HeaderType type = 2;
+    // TxValidationCode 表示交易的验证结果。
+    TxValidationCode tx_validation_code = 3;
+    // Data 是一个选择器，用于确定交易的具体信息，在这里，它是 FilteredTransactionActions 类型的交易操作。
+    oneof Data {
+        FilteredTransactionActions transaction_actions = 4;
+    }
+}
+
+// FilteredChaincodeAction 表示过滤后的与链码相关的行为。
+message FilteredChaincodeAction {
+    // ChaincodeEvent 表示操作链码的事件。
+    ChaincodeEvent chaincode_event = 1;
+}
+
+// FilteredTransactionActions 表示过滤后的交易中的操作。
+message FilteredTransactionActions {
+    // ChaincodeActions 表示过滤后的交易中包含的过滤后的链码的操作的列表。
+    repeated FilteredChaincodeAction chaincode_actions = 1;
+}
+
+// BlockAndPrivateData 表示一个区块及其私有数据。
+message BlockAndPrivateData {
+    // Block 表示一个完整的区块。
+    pcommon.Block block = 1;
+    // PrivateDataMap 表示从交易序列号到 rwset.TxPvtReadWriteSet 的私有数据映射。
+    map<uint64, rwset.TxPvtReadWriteSet> private_data_map = 2;
+}
+
+// DeliverResponse 表示交付响应的相关信息，允许在交付响应中返回不同类型的数据，例如状态、完整区块、
+// 过滤后的区块以及区块和私有数据的组合。
+message DeliverResponse {
+    // Type 表示一个选择器，用于确定响应的具体类型。
+    oneof Type {
+        // Status 表示响应的状态。
+        pcommon.Status status = 1;
+        // Block 表示一个完整的区块。
+        pcommon.Block block = 2;
+        // FilteredBlock 表示一个过滤后的区块。
+        FilteredBlock filtered_block = 3;
+        // BlockAndPrivateData 表示一个区块及其私有数据。
+        BlockAndPrivateData block_and_private_data = 4;
+    }
+}
+
+// Deliver 服务是一个 RPC 服务，用于在区块链网络中进行交付操作。
+service Deliver {
+    // Deliver 该方法用于向订购者请求交付区块，并返回一个流式的交付响应。在请求中，需要传递一个类型
+    // 为 ab.DELIVER_SEEK_INFO 的 Envelope，其中的 Payload 数据是一个序列化的 orderer.SeekInfo
+    // 消息。该方法会返回一个流式的 DeliverResponse，其中包含了一系列的区块回复。
+    rpc Deliver(stream pcommon.Envelope) returns (stream DeliverResponse);
+
+    // DeliverFiltered 该方法与 Deliver 方法类似，但返回的是过滤后的区块回复。同样需要传递一个类型为
+    // ab.DELIVER_SEEK_INFO 的 Envelope，并返回一个流式的 DeliverResponse，其中包含了一系列的过
+    // 滤后的区块回复。
+    rpc DeliverFiltered(stream pcommon.Envelope) returns (stream DeliverResponse);
+
+    // DeliverWithPrivateData 该方法与 Deliver 方法类似，但返回的是包含区块及其私有数据的回复。同样
+    // 需要传递一个类型为 ab.DELIVER_SEEK_INFO 的 Envelope，并返回一个流式的 DeliverResponse，其中
+    // 包含了一系列的区块和私有数据的回复。
+    rpc DeliverWithPrivateData(stream pcommon.Envelope) returns (stream DeliverResponse);
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --proto_path=$GOPATH/src --go_out=plugins=grpc,paths=source_relative:. events.proto

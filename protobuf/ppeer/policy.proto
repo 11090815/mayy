@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "pcommon/policies.proto";
+
+// ApplicationPolicy 用于捕获在应用程序级别设置和评估的不同策略类型。
+message ApplicationPolicy {
+    oneof Type {
+        // SignaturePolicy 如果策略是使用 MSP 主体的签名组合（阈值门限）指定的，则使用
+        // 此类型。它是 pcommon.SignaturePolicy 类型的字段。
+        pcommon.SignaturePolicyEnvelope signature_policy = 1;
+
+        // ChannelConfigPolicyReference 如果此策略是作为引用通道配置中定义的策略的字符
+        // 串指定的，则使用此类型。它是一个字符串字段，用于引用通道配置中的策略。
+        string channel_config_policy_reference = 2;
+    }
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. policy.proto

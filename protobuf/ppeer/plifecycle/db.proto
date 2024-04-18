@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer/plifecycle";
+
+package plifecycle;
+
+// StateMetadata 是一个消息类型，用于描述命名空间中的键。在集合中，事务写入时无法执行范围扫描，因此我们必须自己跟踪命名空间中的键。
+message StateMetadata {
+    // Datatype 表示键所属的数据类型。
+    string datatype = 1;
+    // Fields 表示该数据类型中的字段列表。
+    repeated string fields = 2;
+}
+
+// StateData 是一个消息类型，用于编码数据类型的特定字段。
+message StateData {
+    oneof Type {
+        // Int64 表示一个 64 位的整数值。
+        int64 Int64 = 1;
+        // Bytes 表示字节数据。
+        bytes Bytes = 2;
+        // String 表示字符串数据。
+        string String = 3;
+    }
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. db.proto

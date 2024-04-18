@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "pcommon/policies.proto";
+
+// ChaincodeID 包含了链码的标识信息。
+message ChaincodeID {
+    // Path 链码的路径，由部署交易指定。
+    string path = 1;
+
+    // Name 链码的名称。
+    string name = 2;
+
+    // Version 链码的版本号。
+    string version = 3;
+}
+
+// ChaincodeInput 结构体用于携带链码函数及其参数。
+message ChaincodeInput {
+    // Args 函数参数，它是一个字节数组类型的字段，用于存储函数的参数，Args 字段是一个重复字段，可以包含
+    // 多个字段。
+    repeated bytes args = 1;
+    // Decorations 函数修饰符，它是一个键值对类型的字段，用于存储函数的修饰符，键是一个字符串类型，表示
+    // 修饰符的名称，值是一个字节数组类型，表示修饰符的值。
+    map<string, bytes> decorations = 2;
+    // IsInit 初始化函数标志，它是布尔类型的字段，用于指示该函数是否是链码的初始化函数。当 IsInit 字段
+    // 为 true 时，表示该函数是用于初始化链码的函数。IsInit 字段主要用于向后兼容旧版本的链码，新版本的
+    // 链码应该自行管理其初始化状态。
+    bool is_init = 3;
+}
+
+// ChaincodeSpec 结构体用于定义链码的元数据。
+message ChaincodeSpec {
+    enum Type {
+        UNDEFINED   = 0;
+        GOLANG      = 1;
+    }
+
+    // Type 字段指示了链码的实现语言，目前仅支持 go 语言。
+    Type type = 1;
+    // ChaincodeId 链码标识，它是一个 ChaincodeID 类型的字段，用于标识链码的唯一 ID。
+    ChaincodeID chaincode_id = 2;
+    // Input 链码输入，它是一个 ChaincodeInput 类型字段，用于传递给链码的输入参数。
+    ChaincodeInput input = 3;
+    // Timeout 链码执行的超时时间，表示链码执行的最大时间限制。
+    int32 timeout = 4;
+}
+
+// ChaincodeDeploymentSpec 用于定义链码部署的元数据。
+message ChaincodeDeploymentSpec {
+    // ChaincodeSpec 链码规范，用于指定链码的规范，包括链码类型、标识、输入参数和执行超时时间。
+    ChaincodeSpec chaincode_spec = 1;
+    // CodePackage 链码包，它是一个字节类型的字段，用于指定链码的部署包，链码包是一个二进制文件，包含了
+    // 链码的实现代码和所依赖的库文件。
+    bytes code_package = 2;
+}
+
+// ChaincodeInvocationSpec 携带了调用的链码中的函数名和传入的函数参数。
+message ChaincodeInvocationSpec {
+    ChaincodeSpec chaincode_spec = 1;
+}
+
+// LifecycleEvent 是用作 LSCC 发出的链码事件的有效载体，它包含一个字段 ChaincodeName，表示链码的名称。
+message LifecycleEvent {
+    string chaincode_name = 1;
+}
+
+// CDSData 是在实例化链码时存储在 LSCC 中的数据，用于 CDSPackage，它需要以 protobuf 格式进行序列化，
+// 以用于 ChaincodeData。
+message CDSData {
+    // Hash 表示 ChaincodeDeploymentSpec.CodePackage 的哈希值，ChaincodeDeploymentSpec.CodePackage
+    // 存放了链码代码和相关代码依赖包。
+    bytes hash = 1;
+    // Metadatahash 表示 ChaincodeID.Name + ChaincodeID.Version 的哈希值。
+    bytes metadatahash = 2;
+}
+
+// ChaincodeData 用于将链码序列化的数据结构。
+message ChaincodeData {
+    // Name 链码名称。
+    string name = 1;
+
+    // Version 链码的版本。
+    string version = 2;
+
+    // Escc 链码实例使用的 ESCC (Endorsement System Chaincode)。
+    string escc = 3;
+
+    // Vscc 链码实例使用的 VSCC (Validation System Chaincode)。
+    string vscc = 4;
+
+    // Policy 链码实例的背书策略。
+    pcommon.SignaturePolicyEnvelope policy = 5;
+
+    // Data 特定于包的数据，这个字段可以根据不同的链码包类型来存储不同的数据。
+    bytes data = 6;
+
+    // Id 链码的唯一指纹，用作标识，目前没有在任何地方使用，仅作为标识符。
+    bytes id = 7;
+
+    // InstantiationPolicy 链码的实例化策略。
+    pcommon.SignaturePolicyEnvelope instantiation_policy = 8;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. chaincode.proto

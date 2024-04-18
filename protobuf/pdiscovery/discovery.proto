@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pdiscovery";
+
+package pdiscovery;
+

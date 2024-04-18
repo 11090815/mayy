@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pcommon";
+
+package pcommon;
+
+import "pmsp/msp_principal.proto";
+
+// Policy 包含一个策略类型和策略值，策略类型可以是签名策略、MSP 成员服务提供者
+// 策略或隐式元策略。
+message Policy {
+    enum PolicyType {
+        UNKNOWN         = 0;
+        SIGNATURE       = 1;
+        MSP             = 2;
+        IMPLICIT_META   = 3;
+    }
+
+    int32 type  = 1;
+    bytes value = 2;
+}
+
+// SignaturePolicyEnvelop 签名策略封装消息，包含一个版本号和一个签名策略，。此外，
+// 该消息还包含多个 MSPPrincipal（成员服务提供者主体）。
+message SignaturePolicyEnvelope {
+    int32 version                         = 1;
+    SignaturePolicy rule                  = 2;
+    repeated pmsp.MSPPrincipal identities = 3;
+}
+
+// SignaturePolicy 签名策略消息，是一个递归的消息结构，用于定义一个轻量级的 DSL
+// （领域特定语言），以描述比“仅有此签名”更复杂的策略。其中，NOutOf 操作符足以表
+// 达 AND 和 OR 关系，还可以表达 N 个策略中的 M 个。SignedBy 表示签名来自于一个
+// 由字节表示的可信任机构（如 CA 证书或自签名证书）。
+message SignaturePolicy {
+    message NOutOf {
+        int32 n                         = 1;
+        repeated SignaturePolicy rules  = 2;
+    }
+    oneof Type {
+        int32 signed_by = 1;
+        NOutOf n_out_of = 2;
+    }
+}
+
+// ImplicitMetaPolicy 是一种策略类型，它依赖于配置的层次结构。它是隐式的，因为规则
+// 是根据子策略的数量隐式生成的。它是元的，因为它仅依赖于其他策略的结果。在评估时，
+// 该策略会遍历所有直接子组，获取名为 SubPolicy 的策略，评估集合并应用规则。例如，于
+// 4 个子组和策略名称为 "foo" 的情况，ImplicitMetaPolicy 会获取每个子组，获取每个
+// 子组的策略 "foo"，对其进行评估，并根据规则确定结果。规则中的 "ANY" 表示满足任何
+// 一个子策略即可，如果没有子策略，则始终返回 true；"ALL" 表示所有子策略都必须满足；
+// "MAJORITY" 表示超过一半的子策略必须满足。
+message ImplicitMetaPolicy {
+    enum Rule {
+        ANY         = 0;
+        ALL         = 1;
+        MAJORITY    = 2;
+    }
+    string sub_policy   = 1;
+    Rule rule           = 2;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. policies.proto

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer/plifecycle";
+
+package plifecycle;
+
+// ChaincodeEndorsementInfo 是链码背书信息的结构体
+message ChaincodeEndorsementInfo {
+    // Version 版本号，表示链码的版本。
+    string version = 1;
+    // InitRequired 表示是否需要初始化链码。
+    bool init_required = 2;
+    // EndorsementPlugin 表示用于背书的插件的名称。
+    string endorsement_plugin = 3;
+}
+
+// ChaincodeValidationInfo 表示链码验证信息的结构体。
+message ChaincodeValidationInfo {
+    // ValidationPlugin 表示验证插件的名称。
+    string validation_plugin = 1;
+    // ValidationParameter 表示用于验证的参数。
+    bytes validation_parameter = 2;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. chaincode_definition.proto

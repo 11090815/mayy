@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "chaincode_event.proto";
+import "proposal.proto";
+import "github.com/google/protobuf/timestamp.proto";
+
+// ChaincodeMessage 结构体用于在链码与区块链之间传递消息和执行操作。
+message ChaincodeMessage {
+    // Type 枚举类型，定义了诸如注册、初始化、交易等操作类型。
+    enum Type {
+        UNDEFINED             = 0;
+        REGISTER              = 1;
+        REGISTERED            = 2;
+        INIT                  = 3;
+        READY                 = 4;
+        TRANSACTION           = 5;
+        COMPLETED             = 6;
+        ERROR                 = 7;
+        GET_STATE             = 8;
+        PUT_STATE             = 9;
+        DEL_STATE             = 10;
+        INVOKE_CHAINCODE      = 11;
+        RESPONSE              = 12;
+        GET_STATE_BY_RANGE    = 13;
+        GET_QUERY_RESULT      = 14;
+        QUERY_STATE_NEXT      = 15;
+        QUERY_STATE_CLOSE     = 16;
+        KEEPALIVE             = 17;
+        GET_HISTORY_FOR_KEY   = 18;
+        GET_STATE_METADATA    = 19;
+        PUT_STATE_METADATA    = 20;
+        GET_PRIVATE_DATA_HASH = 21;
+        PURGE_PRIVATE_DATA    = 22;
+    }
+
+    // Type 枚举类型，定义了诸如注册、初始化、交易等操作类型。
+    Type type = 1;
+
+    // Timestamp 表示时间的时间戳，用于记录消息的创建时间。
+    google.protobuf.Timestamp timestamp = 2;
+
+    // Payload 表示消息的有效载荷，以字节形式存储。
+    bytes payload = 3;
+
+    // Txid 表示与消息相关的交易的标识符。
+    string txid = 4;
+
+    // Proposal 表示包含签名的提案。
+    SignedProposal proposal = 5;
+
+    // ChaincodeEvent 表示由链码发出的事件，该事件仅在初始化或调用链码时使用，被储存在区块的哈希中的 TransactionResult 字段中。
+    ChaincodeEvent chaincode_event      = 6;
+
+    // ChannelId 表示消息所属的通道的标识符。
+    string channel_id                   = 7;
+}
+
+// GetState 用于读取账本中的状态。
+message GetState {
+    // Key 要从账本中获取状态的键。
+    string key = 1;
+
+    // Collection 是一个可选字段，用于指定从私有状态集合中获取状态。
+    string collection = 2;
+}
+
+// GetStateMetadata 用于获取状态的元数据。
+message GetStateMetadata {
+    // Key 要获取元数据的状态的键。
+    string key = 1;
+
+    // Collection 可选字段，用于指定从私有状态集合中获取元数据。
+    string collection = 2;
+}
+
+// PutState 用于将状态写入事务。
+message PutState {
+    // Key 要写入的状态的键。
+    string key = 1;
+
+    // Values 要写入的状态的值。
+    bytes value = 2;
+
+    // Collection 可选字段，用于指定将状态写入私有集合。
+    string collection = 3;
+}
+
+// PutStateMetadata 用于将状态的元数据写入事务。
+message PutStateMetadata {
+    // Key 要写入的状态的键。
+    string key = 1;
+
+    // Collection 可选字段，用于指定将元数据写入私有集合。
+    string collection       = 2;
+    StateMetadata metadata  = 3;
+}
+
+// DelState 用于在事务的写集合中记录删除操作的状态。
+message DelState {
+    // Key 要删除的状态的键。
+    string key = 1;
+    // Collection 可选字段，用于指定将删除操作记录在私有集合中。
+    string collection = 2;
+}
+
+// PurgePrivateState 用于在事务的写集中记录清除私有状态的操作。
+message PurgePrivateState {
+    // Key 要清除的私有状态的键。
+    string key = 1;
+    // Collection 可选字段，用于指定将清除操作记录在私有写集中。
+    string collection = 2;
+}
+
+// GetStateByRange 用于范围查询的操作。
+message GetStateByRange {
+    // StartKey 范围查询的起始键。
+    string startKey = 1;
+    // EndKey 范围查询的结束键。
+    string endKey = 2;
+    // Collection 可选字段，用于指定在私有数据上执行范围查询。
+    string collection = 3;
+    // Metadata 用于存储查询元数据的字节表示形式。
+    bytes metadata = 4;
+}
+
+// GetQueryResult 消息定义了一个用于获取查询结果的有效负载。
+message GetQueryResult {
+    // Query 查询字符串，以由底层状态数据库支持的形式表示。
+    string query = 1;
+    // Collection 指定查询私有数据时执行的集合，若未指定，则查询将在公共数据上执行。
+    string collection = 2;
+    // Metadata QueryMetadata 结构体的字节表示形式。
+    bytes metadata = 3;
+}
+
+// QueryMetadata 定义了 GetStateByRange 和 GetQueryResult 的查询元数据。
+message QueryMetadata {
+    // PageSize 要获取的记录数量。
+    int32 pageSize = 1;
+    // Bookmark 书签，用于从特定位置开始获取记录。
+}
+
+// GetHistoryForKey 定义了一个用于获取历史的有效载荷。
+message GetHistoryForKey {
+    // Key 要获取历史值的键。
+    string key = 1;
+}
+
+// QueryStateNext 定义了一个用于获取下一个查询状态的有效载荷。
+message QueryStateNext {
+    // Id 查询的标识符。
+    string id = 1;
+}
+
+// QueryStateClose 定义了一个用于关闭查询状态的有效载荷。
+message QueryStateClose {
+    // Id 查询的标识符。
+    string id = 1;
+}
+
+// QueryResultBytes 定义了一个存储由对等方返回的记录的字节表示形式的有效载荷。
+message QueryResultBytes {
+    // ResultBytes 返回的记录的字节表示形式的有效载荷。
+    bytes resultBytes = 1;
+}
+
+// QueryResponse 消息被对等方作为 GetStateRange、GetQueryResult 和 GetHistoryForKey 的结果返回。
+message QueryResponse {
+    // Results 一组 QueryResultBytes。
+    repeated QueryResultBytes results = 1;
+    // HasMore 一个 bool 标志，表示是否需要从对等方获取更多结果。
+    bool has_more = 2;
+    // Id 事务 id。
+    string id = 3;
+    // Metadata QueryResponseMetadata 的字节表示形式。
+    bytes metadata = 4;
+}
+
+// QueryResponseMetadata 定义了 QueryResponse 的元数据。
+message QueryResponseMetadata {
+    // FetchedRecordsCount 从账本中获取的记录数量。
+    int32 fetched_records_count = 1;
+    // Bookmark 用于从特定地方继续查询。
+    string bookmark = 2;
+}
+
+// StateMetadata 定义了状态元数据的键值对。
+message StateMetadata {
+    // Metakey 元数据的键。
+    string metakey = 1;
+    // Value 元数据值的字节表示形式。
+    bytes value = 2;
+}
+
+// StateMetadataResult 定义了状态元数据的查询结果。
+message StateMetadataResult {
+    // Entries 一组状态元数据的 StateMetadata。
+    repeated StateMetadata entries = 1;
+}
+
+// ChaincodeSupport 提供了与链码执行相关的支持服务，它定义了一个名为 Register 的 rpc 方法，该方法以 ChaincodeMessage 流作为输入，
+// 并返回一个 ChaincodeMessage 流作为输出，Register 方法用于注册与链码交互的流，并处理来自链码的请求和响应。
+service ChaincodeSupport {
+    rpc Register(stream ChaincodeMessage) returns (stream ChaincodeMessage);
+}
+
+// Chaincode 用作链码的服务器，对等节点作为客户端与链码进行连接，它定义了一个名为 Connect 的 rpc 方法，该方法以 ChaincodeMessage 流作为输入，
+// 并返回一个 ChaincodeMessage 流作为输出，Connect 方法用于建立与链码之间的连接，并处理链码的请求和响应。
+service Chaincode {
+    rpc Connect(stream ChaincodeMessage) returns (stream ChaincodeMessage);
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --go_out=plugins=grpc,paths=source_relative:. chaincode_shim.proto

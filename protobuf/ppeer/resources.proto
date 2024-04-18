@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "pcommon/configtx.proto";
+
+// ChaincodeIdentifier 链码标识符标识一段链码。对于一个对等体来接受这个链码的调用，安装的代码
+// 的散列必须匹配，安装命令中包含的版本字符串也必须匹配。
+message ChaincodeIdentifier {
+    // Hash 链码字节的哈希值，哈希值用于验证已安装的链码与被调用的链码是否一致。
+    bytes hash = 1;
+    // Version 与安装命令一起提供的用户友好的人类可读名称，用于标识链码的版本。
+    string version = 2;
+}
+
+// ChaincodeValidation 可以为特定的链码指定验证逻辑，以确保只有满足指定条件的事务才会被接收和执行。
+message ChaincodeValidation {
+    // Name 指定用于验证事务的代码的名称，默认情况下，使用标准的 VSCC（Validation System Chaincode）
+    // 验证机制。VSCC 验证机制利用背书策略来检查是否包含了足够数量的背书签名。
+    string name = 1;
+    // Argument 当使用 VSCC 验证机制时，该字段用于传递给验证实现的参数，它是一个字节数组，需要使用特定
+    // 的编码方式进行序列化，以便验证过程可以正确解析参数。
+    bytes argument = 2;
+}
+
+// VSCCArgs 结构体的主要目的是将背书策略的引用传递给验证实现，以便验证实现可以根据指定的背书策略来验证事
+// 务。通过指定正确的背书策略引用，可以根据需求定制链码的验证机制，确保只有满足背书策略要求的事务才能被接
+// 受和执行。
+message VSCCArgs {
+    // EndorsementPolicyRef 一个命名引用，指向一个背书策略，背书策略确定了在验证事务时需要多少个背书签名。
+    // 它使用路径形式的命名约定，例如 Channel/Application/Writes。此字段指定了一个指向背书策略的引用，验证
+    // 实现将根据该引用找到相应的背书策略。
+    string endorsement_policy_ref = 1;
+}
+
+// ChaincodeEndorsement 结构体用于指示 peer 节点如何对事务进行背书。
+message ChaincodeEndorsement {
+    // Name 指定用于背书的代码的名称。默认情况下，使用标准的 ECSS（Endorsement System Chaincode）背书机
+    // 制。ESCC 背书机制模拟了提案生成读写集并使用 peer 节点的本地签名身份对结果进行签名的过程。
+    string name = 1;
+}
+
+// ConfigTree 结构体用于封装通道（channel）和资源（resources）的配置信息
+message ConfigTree {
+    // ChannelConfig 通道的配置信息，以 pcommon.Config 类型表示，通道配置包括通道的名称、
+    // 背书策略、访问控制规则等。
+    pcommon.Config channel_config = 1;
+    // ResourcesConfig 资源的配置信息，以 pcommon.Config 类型表示，资源配置包括链码的背书策略、
+    // 访问控制规则、背书策略等。
+    pcommon.Config resources_config = 2;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --proto_path=$MAYY_HOME/protobuf/pcommon --go_out=,paths=source_relative:. resources.proto

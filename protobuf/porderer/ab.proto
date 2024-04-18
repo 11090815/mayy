@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/porderer";
+
+package porderer;
+
+import "pcommon/common.proto";
+
+// BroadcastResponse 这是一个用于广播响应的消息结构体。
+message BroadcastResponse {
+    // Status 用于表示响应状态码，可以用于在程序中对成功或失败做出响应。
+    pcommon.Status status = 1;
+    // Info 一个信息字符串，包含有关返回状态的附加信息。
+    string info = 2;
+}
+
+// SeekNewest 这是一个用于请求最新数据的消息结构体。该结构体不含任何
+// 字段。
+message SeekNewest {}
+
+// SeekOldest 这是一个用于请求最旧数据的消息结构体。该结构体不含任何
+// 字段。
+message SeekOldest {}
+
+// SeekSpecified 这是一个用于请求指定数据的消息结构体。
+message SeekSpecified {
+    // Number 用于指定请求的特定数据。
+    uint64 number = 1;
+}
+
+// SeekNextCommit 用于指示下一个将被提交的区块，它没有任何字段，用于向
+// 系统发出请求以获取即将提交的下一个区块的信息。
+message SeekNextCommit {}
+
+// SeekPosition 结构体可以根据需要选择不同的子消息类型来请求不同类型的数据。
+message SeekPosition {
+    oneof Type {
+        // Newest 用于请求最新数据。
+        SeekNewest newest = 1;
+        // Oldest 用于请求最旧的数据。
+        SeekOldest oldest = 2;
+        // Specified 用于请求指定数据。
+        SeekSpecified specified = 3;
+        // NextCommit 用于请求下一个将被提交的区块。
+        SeekNextCommit next_commit = 4;
+    }
+}
+
+// SeekInfo 该消息结构体可能被用在一个区块链项目中，用于请求和控制区块的传递和处理。
+// 它的功能包括指定请求的区块范围、定义遇到缺失区块时的行为、处理区块提供者错误以及
+// 指定传递的内容类型。通过使用这个消息结构体，可以更灵活地控制区块的传递和处理过程。
+message SeekInfo {
+    // SeekBehavior 指定当遇到缺失的区块时的行为。
+    enum SeekBehavior {
+        // BLOCK_UNTIL_READY 在请求的区块可用之前阻塞回复。
+        BLOCK_UNTIL_READY = 0;
+        // FAIL_IF_NOT_READY 如果请求的区块不可用，则立马返回错误。
+        FAIL_IF_NOT_READY = 1;
+    }
+
+    // SeekErrorResponse 指示服务器如何容忍区块提供者产生的错误。
+    enum SeekErrorResponse {
+        // STRICT 严格模式，当检测到 orderer 出现问题时，则拒绝交付请求。
+        STRICT = 0;
+        // BEST_EFFORT 尽力而为模式，如果共识过程处于错误状态，也会尽力响应区块请求。
+        BEST_EFFORT = 1;
+    }
+
+    // SeekContentType 指示响应请求时传递的内容类型。
+    enum SeekContentType {
+        // BLOCK 传递完整的区块。
+        BLOCK = 0;
+        // HEADER_WITHSIG 只传递区块头和签名，不包含有效载荷，用于验证区块是否存在。
+        HEADER_WITHSIG = 1;
+    }
+
+    // Start 指定交付开始的位置。
+    SeekPosition start = 1;
+    // Stop 指定交付结束的位置。
+    SeekPosition stop = 2;
+    // Behavior 指定遇到缺失区块时的行为。
+    SeekBehavior behavior = 3;
+    // ErrorResponse 指定如何响应交付服务报告的错误。
+    SeekErrorResponse error_response = 4;
+    // ContentType 指定响应请求时传递的内容类型。
+    SeekContentType content_type = 5;
+}
+
+// DeliverResponse 通过该消息结构，orderer 可以根据请求的不同情况返回不同类型的响应，
+// 包括状态信息和区块内容。这样可以使交付服务更加灵活和具有针对性，满足不同客户端的需求。
+message DeliverResponse {
+    oneof Type {
+        // Status 用于返回交付请求的状态，这个字段通常包含有关请求处理结果的信息，例如
+        // 成功与否、错误代码等。
+        pcommon.Status status = 1;
+        // Block 用于返回交付请求中请求的区块内容。
+        pcommon.Block block = 2;
+    }
+}
+
+// AtomicBroadcast 服务可以实现交易或请求的广播以及区块内容的交付。
+service AtomicBroadcast {
+    // Broadcast 方法接收一个流式的 pcommon.Envelope 消息流，每个消息代表一个要广播的交易或请求。
+    // 返回一个流式的 BroadcastResponse 消息流，其中每个消息对应于 Broadcast 方法接收到的 pcommon.Envelope
+    // 消息的响应，表示成功或失败的信息。
+    rpc Broadcast(stream pcommon.Envelope) returns (stream BroadcastResponse);
+    // Deliver 方法首先接收一个流式的 pcommon.Envelope 消息流，该消息流中包含一个类型为 DELIVER_SEEK_INFO 的
+    // Envelope，其中的 Payload 数据是一个序列化后的 SeekInfo 消息。然后，该方法返回一个流式的 DeliverResponse
+    // 消息流，其中包含了按顺序发送的区块回复。返回一个流式的 DeliverResponse 消息流，其中每个消息对应于根据接收
+    // 到的 DELIVER_SEEK_INFO 消息请求的区块内容。
+    rpc Deliver(stream pcommon.Envelope) returns (stream DeliverResponse);
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --go_out=plugins=grpc,paths=source_relative:. ab.proto

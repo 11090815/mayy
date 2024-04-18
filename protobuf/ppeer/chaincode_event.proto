@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+// ChaincodeEvent 结构体用于表示与 chaincode 相关的事件和注册信息。通过使用 ChaincodeEvent 结构体，可以在链码
+// 中定义和触发特定的事件，并通过有效载荷传递相关数据。这使得链码在执行特定操作时能够通知其他链码或外部系统。
+message ChaincodeEvent {
+    // ChaincodeId 表示与事件相关的 chaincode 的标识符。
+    string chaincode_id = 1;
+
+    // TxId 表示与事件相关的的交易标识符。
+    string tx_id = 2;
+
+    // EventName 表示事件的名称。
+    string event_name = 3;
+
+    // Payload 表示事件的有效载荷。
+    bytes payload = 4;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --go_out=,paths=source_relative:. chaincode_event.proto

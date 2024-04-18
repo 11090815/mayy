@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "proposal.proto";
+
+// SignedChaincodeDeploymentSpec 是一个带有背书的链码部署规范的消息。
+message SignedChaincodeDeploymentSpec {
+    // ChaincodeDeploymentSpec 链码部署规范的字节表示形式，它包含了链码的元数据、代码和
+    // 依赖项等信息。
+    bytes chaincode_deployment_spec = 1;
+    // Instantiation 与背书策略结构相同的实例化策略，该策略在实例化时由 VSCC （验证系统链码）
+    // 进行验证，所有对等体将获得相同的策略，因为它将成为 LSCC（生命周期系统链码）实例化记录的
+    // 一部分，并且也将成为哈希的一部分。
+    bytes instantiation_policy = 2;
+    // OwnerEndorsements 对上述部署规范的背书，拥有者通过对 ChaincodeDeploymentSpec 和
+    // Endorsement.Endorser 的签名来背书。
+    repeated Endorsement owner_endorsements = 3;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. signed_cc_dep_spec.proto

@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "proposal.proto";
+import "pcommon/common.proto";
+
+enum TxValidationCode {
+    VALID                        = 0; // 事务验证成功。
+    NIL_ENVELOPE                 = 1; // 事务的 Envelope 为空。
+    BAD_PAYLOAD                  = 2; // 事务的有效载荷存在问题。
+    BAD_COMMON_HEADER            = 3; // 事务的公共头部存在问题。
+    BAD_CREATOR_SIGNATURE        = 4; // 事务的创建者签名存在问题。
+    INVALID_ENDORSER_TRANSACTION = 5; // 背书节点为事务的背书无效。
+    INVALID_CONFIG_TRANSACTION   = 6; // 配置事务无效。
+    UNSUPPORTED_TX_PAYLOAD       = 7; // 不支持的事务有效载荷。
+    BAD_PROPOSAL_TXID            = 8; // 提案的事务 ID 存在问题。
+    DUPLICATE_TXID               = 9; // 重复出现的事务 ID。
+    ENDORSEMENT_POLICY_FAILURE   = 10; // 背书策略失败。
+    MVCC_READ_CONFLICT           = 11; // 多版本并发控制读冲突。
+    PHANTOM_READ_CONFLICT        = 12; // 读冲突。
+    UNKNOWN_TX_TYPE              = 13; // 未知的事务类型。
+    TARGET_CHAIN_NOT_FOUND       = 14; // 找不到目标链。
+    MARSHAL_TX_ERROR             = 15; // 序列化事务数据出错。
+    NIL_TXACTION                 = 16; // 事务操作为空。
+    EXPIRED_CHAINCODE            = 17; // 链码已过期。
+    CHAINCODE_VERSION_CONFLICT   = 18; // 链码版本冲突。
+    BAD_HEADER_EXTENSION         = 19; // 头部扩展字段有问题。
+    BAD_CHANNEL_HEADER           = 20; // 通道的头部存在问题。
+    BAD_RESPONSE_PAYLOAD         = 21; // 响应的有效载荷存在问题。
+    BAD_RWSET                    = 22; // 读写集有问题。
+    ILLEGAL_WRITESET             = 23; // 非法的写集。
+    INVALID_WRITESET             = 24; // 无效的写集。
+    INVALID_CHAINCODE            = 25; // 无效的链码。
+    NOT_VALIDATED                = 26; // 未验证。
+    INVALID_OTHER_REASON         = 27; // 其他原因导致验证失败。
+}
+
+// MetaDataKeys 定义了在键级元数据映射中的保留条目。
+enum MetaDataKeys {
+    VALIDATION_PARAMETER    = 0; // 验证参数的元数据键。
+    VALIDATION_PARAMETER_V2 = 1; // 验证参数的元数据键的第二个版本。
+}
+
+// ProcessedTransaction 结构体用于封装一个 Envelope，该 Envelope 包含了一个已经处理过的事务 transaction，
+// 并且还包含了一个指示该事务是否被提交节点验证的标志。
+message ProcessedTransaction {
+    pcommon.Envelope transaction_envelope = 1;
+    int32 validation_code = 2;
+}
+
+// Transaction 结构体表示要发送给排序服务的事务，一个事务包含一个或多个 TransactionAction。每个 TransactionAction
+// 将一个提案与可能的多个操作绑定在一起。事务是原子性的，这意味着要么所有的操作都会被提交，要么都不会被提交。
+// 注意，虽然一个事务可能包含多个 Header，但是每个 Header 的 Creator 字段必须相同。
+// 一个客户端可以自由的发出多个独立的提案，每个提案都有自己的头部 Header 和请求负载 ChaincodeProposalPayload。
+// 每个提案都会独立地获得背书，生成一个操作 ProposalResponsePayload，每个背书者为其生成一个签名。任意数量的提案
+// 可以包含在一个事务中，以确保它们会被作为一个整体进行处理（原子性）。
+message Transaction {
+    repeated TransactionAction actions = 1;
+}
+
+// TransactionAction 结构体表示将提案与其操作绑定在一起。头部 Header 中的字段决定了要应用于分类账的操作类型。
+message TransactionAction {
+    // Header 字段是 ProposalAction 的头部，也是 Proposal 的头部
+    bytes header = 1;
+
+    // Payload 字段是操作的负载，根据头部中的类型字段定义，对于链码来说，它是 ChaincodeActionPayload。
+    bytes payload = 2;
+}
+
+// ChaincodeActionPayload 结构体用于 TransactionAction 的负载，当 Header 的类型设置为 CHAINCODE 时使用。
+// 它包含了一个 ChaincodeProposalPayload 和一个已背书的操作，应用于分类账。
+message ChaincodeActionPayload {
+    // ChaincodeProposalPayload 字段包含了原始调用的 ChaincodeProposalPayload 消息的字节。
+    bytes chaincode_proposal_payload = 1;
+
+    // Action 字段是要应用于分类账的操作列表，它包含了已背书的操作，用于将更改作用于分类账。
+    ChaincodeEndorsedAction action = 2;
+}
+
+// ChaincodeEndorsedAction 结构体用于携带关于特定提案的背书信息。
+message ChaincodeEndorsedAction {
+    // ProposalResponsePayload 字段是背书者签名的 ProposalResponsePayload 消息的字节表示形式。
+    // 对于 CHAINCODE 类型，ProposalResponsePayload 的扩展字段包含一个 ChaincodeAction。
+    bytes proposal_response_payload = 1;
+    // Endorsements 字段是提案的背书，一般来说是背书节点对 ProposalResponsePayload 字节数组的
+    // 签名，这是一个 Endorsement 类型数组，表示可能有多个背书节点对提案进行了背书。
+    repeated Endorsement endorsements = 2;
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --proto_path=$GOPATH/src --go_out=,paths=source_relative:. transaction.proto

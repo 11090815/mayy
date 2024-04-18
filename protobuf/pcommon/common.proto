@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pcommon";
+
+package pcommon;
+
+import "github.com/google/protobuf/timestamp.proto";
+
+// Status 类似于 HTTP 请求的状态码。
+enum Status {
+    UNKNOWN                  = 0;
+    SUCCESS                  = 200;
+    BAD_REQUEST              = 400;
+    FORBIDDEN                = 403;
+    NOT_FOUND                = 404;
+    REQUEST_ENTITY_TOO_LARGE = 413;
+    INTERNAL_SERVER_ERROR    = 500;
+    NOT_IMPLEMENTED          = 501;
+    SERVICE_UNAVAILABLE      = 503;
+}
+
+// HeaderType 表示头部消息类型。
+enum HeaderType {
+    MESSAGE              = 0; // MESSAGE 表示消息类型为一种已签名但不透明的消息。
+    CONFIG               = 1; // CONFIG 表示消息类型为通道配置。
+    CONFIG_UPDATE        = 2; // CONFIG 表示消息类型为更新通道配置的事务。
+    ENDORSER_TRANSACTION = 3; // ENDORSER_TRANSACTION 表示消息类型用于 SDK 提交基于背书节点的事务。
+    ORDERER_TRANSACTION  = 4; // ORDERER_TRANSACTION 表示消息类型用于内部使用，由排序服务进行管理。
+    DELIVER_SEEK_INFO    = 5; // DELIVER_SEEK_INFO 表示消息类型用作提交给 Deliver API 以请求消息定位的 Envelope 消息类型。
+    CHAINCODE_PACKAGE    = 6; // CHAINCODE_PACKAGE 表示消息类型用于打包链码构件以进行安装。
+}
+
+// BlockMetadataIndex 用于列举区块元数据数组的索引位置。
+enum BlockMetadataIndex {
+    SIGNATURES          = 0; // SIGNATURES 区块签名在区块元数据数组中的位置。
+    TRANSACTIONS_FILTER = 1; // TRANSACTIONS_FILTER 存储无效交易的序列化位数组过滤器在区块元数据数组中的位置。
+    COMMIT_HASH         = 2; //  COMMIT_HASH 存储 TRANSACTIONS_FILTER、状态更新以及上一个区块的 COMMIT_HASH 的散列值在区块元数据数组中的位置。
+}
+
+// LastConfig 用于编码在 LastConfig 区块元数据索引中的 Metadata 消息的编码值。
+message LastConfig {
+    uint64 index = 1; // Index 表示上一个配置块的序列号。
+}
+
+// Meatadata 是一个常用结构，用于存储元数据的签名信息。
+message Metadata {
+    bytes value                             = 1; // Value 是一个字节数组，用于存储编码后的元数据值。
+    repeated MetadataSignature signatures   = 2; // Signatures 是一个重复的 MetadataSignature 消息数组，用于存储元数据的签名信息。
+}
+
+// MetadataSignature 是一个消息结构体，用于存储元数据的签名信息。
+message MetadataSignature {
+    bytes signature_header  = 1; // SignatureHeader 是一个字节数组，用于存储编码后的签名头。
+    bytes signature         = 2; // Signature 是一个字节数组，用于存储签名信息。
+    bytes identifier_header = 3; // IdentifierHeader 是一个字节数组，如果 SignatureHeader 为空，则用此字段来标识创建者的 ID。
+}
+
+// IdentifierHeader 当创建者可以通过 ID 索引时，IdentifierHeader 可被用作 SignatureHeader 的替代。
+message IdentifierHeader {
+    uint32 identifier   = 1; // Identifier 是一个 32 位无符号整数，表示消息创建者的唯一标识符。
+    bytes nonce         = 2; // Nonce 是一个字节数组，它是一个只能使用一次的任意数值，用于防重放攻击。
+}
+
+// Header 用于存储签名有效载荷中的通用信息。
+message Header {
+    bytes channel_header    = 1; // ChannelHeader 是一个字节数组，存储通道头的编码值。
+    bytes signature_header  = 2; // SignatureHeader 是一个字节数组，存储签名头的编码值。
+}
+
+// ChannelHeader 用于存储通道头部的通用信息。
+message ChannelHeader {
+    int32 type                          = 1; // Type 用于定义头的类型，其中 0-10000 被保留。
+    int32 version                       = 2; // Version 表示消息协议版本。
+    google.protobuf.Timestamp timestamp = 3; // Timestamp 表示创建消息时的时间。
+    string channel_id                   = 4; // ChannelId 表示消息所属的通道的标识符。
+    string tx_id                        = 5; // TxId 表示该消息绑定的唯一标识符，用于实现端到端的唯一性。
+    uint64 epoch                        = 6; // Epoch 表示生成该头部的时期，由区块高度定义，只有当对等方所处的时期与该时期相同，且此消息在本时期内被对等方第一次收到，对等方才会接受该消息。
+    bytes extension                     = 7; // Extension 是一个字节数组，用于根据消息头类型附加扩展信息。
+    bytes tls_cert_hash                 = 8; // TlsCertHash 是一个字节数组，如果使用了双向 TLS，则代表客户端 TLS，则代表客户端 TLS 整数的散列值。
+}
+
+// SignatureHeader 签名头。
+message SignatureHeader {
+    bytes creator   = 1; // Creator 消息的创建者。
+    bytes nonce     = 2; // Nonce 用于检测重放攻击的随机值。
+}
+
+// Payload 消息内容。
+message Payload {
+    Header header   = 1; // Header 内包含了身份信息，可用于身份验证，并且用于防重放。
+    bytes data      = 2; // Data 消息的内容。
+}
+
+message Envelope {
+    bytes payload   = 1; // Payload 是 Payload 结构体序列化后的编码数据。
+    bytes signature = 2; // Signature 由创建者在 Payload.Header 中指定的签名。
+}
+
+// Block 是最终的区块结构，包含了区块头、区块体和区块元数据，区块头用于形成区块链，
+// 包含了区块在区块链中的位置、前一个区块的哈希和区块体的哈希，区块提包含了一系列交
+// 易数据，区块元数据中包含了一系列的元数据。
+message Block {
+    BlockHeader header      = 1; // Header 区块头。
+    BlockData data          = 2; // Data 区块体。
+    BlockMetadata metadata  = 3; // Metadata 区块元数据。
+}
+
+// BlockHeader 区块头是构成区块链的元素，它使用配置的哈希算法对区块头的 ASN.1 编码进行哈希。
+message BlockHeader {
+    uint64 number       = 1; // Number 表示区块在区块链中的位置，使用无符号 64 位整数表示。
+    bytes previous_hash = 2; // PreviousHash 表示前一个区块的哈希值。
+    bytes data_hash     = 3; // DataHash 交易按照默克尔树结构组织起来，树的根节点的哈希值即是 DataHash。
+}
+
+// BlockData 是区块中的数据部分。
+message BlockData {
+    repeated bytes data = 1; // Data 内存储了区块中的所有交易数据。
+}
+
+// BlockMetadata 是区块的元数据部分。
+message BlockMetadata {
+    repeated bytes metadata = 1; // Metadata 内存储了区块的所有元数据。
+}
+
+// OrdererBlockMetadata 定义了排序服务的元数据。
+message OrdererBlockMetadata {
+    LastConfig last_config      = 1; // LastConfig 用于记录最近一次的配置更新。
+    bytes consenter_metadata    = 2; // ConsenterMetadata 共识节点的元数据，可以包含共识节点的特定信息。
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --go_out=,paths=source_relative:. common.proto

@@ -1,0 +1,382 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pgossip";
+
+package pgossip;
+
+import "ppeer/collection.proto";
+
+service Gossip {
+    // GossipStream 这是一个双向的 gRPC 流，用于节点之间的消息传递。每个节点可以通过该流发送消息给其他节点，
+    // 并接收来自其他节点的消息。这样可以实现节点之间的信息同步和传递。
+    rpc GossipStream(stream Envelope) returns (stream Envelope);
+
+    // Ping 这是一个用于探测远程节点存活状态的功能。一个节点可以向其他节点发送 Ping 请求，如果对方节点响应了
+    // Ping 请求，说明该节点是存活的。
+    rpc Ping(Empty) returns (Empty);
+}
+
+// Envelope 结构体用于封装数据和签名。
+message Envelope {
+    // Payload 字段用于存储要传输的数据，以字节形式表示。
+    bytes payload = 1;
+    // Signature 字段用于存储对 Payload 进行签名的结果。
+    bytes signature = 2;
+    // SecretEnvelope 字段用于存储 SecretEnvelope 结构体的实例，用于在某些情况下对数据进行加密和保护。
+    SecretEnvelope secret_envelope = 3;
+}
+
+// SecretEnvelope 结构体主要用途是在敏感数据传输中提供保密性。通过对 Payload 进行加密和签名，
+// 可以确保数据在传输过程中不会被泄露或篡改。
+message SecretEnvelope {
+    // Payload 字段用于存储加密数据。
+    bytes payload = 1;
+    // Signature 用于存储对 Payload 进行签名的结果。
+    bytes signature = 2;
+}
+
+message Secret {
+    oneof content {
+        string internalEndpoint = 1;
+    }
+}
+
+// GossipMessage 结构体用于组装在 P2P 网络中传输的消息。
+message GossipMessage {
+    // Nonce 用于测试的字段。
+    uint64 nonce = 1;
+    // Channel 用于标识消息所属的通道。当此字段被设置成空时，则代表此消息是跨通道的。
+    bytes channel = 2;
+
+    // Tag 枚举类型，用于确定允许将消息转发给哪些对等方。
+    enum Tag {
+        // UNDEFINED 未定义的标签。
+        UNDEFINED = 0;
+        // EMPTY 空标签，表示消息不需要转发给任何对等方。
+        EMPTY = 1;
+        // ORG_ONLY 只对组织内的对等方转发消息。
+        ORG_ONLY = 2;
+        // CHAN_ONLY 只对通道内的对等方转发消息。
+        CHAN_ONLY = 3;
+        // CHAN_AND_ORG 对通道内和组织内的对等方转发消息。
+        CHAN_AND_ORG = 4;
+        // CHAN_OR_ORG 对通道内的对等方或组织内的对等方转发消息。
+        CHAN_OR_ORG = 5;
+    }
+
+    Tag tag = 3;
+
+    // Content 用于指定 GossipMessage 消息的具体内容。
+    oneof content {
+        // AliveMsg 成员身份验证消息。
+        AliveMessage alive_msg = 4;
+        // MemReq 用于发送成员请求。
+        MembershipRequest mem_req = 5;
+        // MemRes 用于响应成员请求。
+        MembershipResponse mem_res = 6;
+        // DataMsg 包含账本区块的消息。
+        DataMessage data_msg = 7;
+        // Hello 用于问候对等方的消息。
+        GossipHello hello = 8;
+        // DataDigest 分类账的数据摘要。
+        DataDigest data_dig = 9;
+        // DataReq 请求分类账数据的消息。
+        DataRequest data_req = 10;
+        // DataUpdate 分类账数据更新消息。
+        DataUpdate data_update = 11;
+        // Empty 空消息，用于 Ping 测试。
+        Empty empty = 12;
+        // ConnEstablish 用于建立连接的消息。
+        ConnEstablish conn_establish = 13;
+        // StateInfo 关于状态信息的消息。
+        StateInfo state_info = 14;
+        // StateInfoSnapshot 关于状态信息的一组消息，一般用于状态同步。
+        StateInfoSnapshot state_info_snapshot = 15;
+        // StateInfoPullReq 请求状态信息的请求消息。
+        StateInfoPullRequest state_info_pull_req = 16;
+        // RemoteStateReq 从远程对等方请求一组区块。
+        RemoteStateRequest remote_state_req = 17;
+        // RemoteStateRes 向远程对等方发送一组区块。
+        RemoteStateResponse remote_state_res = 18;
+        // LeadershipMsg 用于指示对等体成为领导者的意图。
+        LeadershipMessage leadership_msg = 19;
+        // PeerIdentity 用于了解对等方的证书。
+        PeerIdentity peer_identity = 20;
+        // Ack 用于确认接收到的消息。
+        Acknowledgement ack = 21;
+        // RemotePvtDataReq 用于请求私有数据。
+        RemotePvtDataRequest remote_pvt_data_req = 22;
+        // RemotePvtDataRes 用于响应私有数据请求。
+        RemotePvtDataResponse remote_pvt_data_res = 23;
+        // PrivateDataMsg 用于封装私有数据，用于在背书之后分发私有读写集。
+        PrivateDataMessage private_data_msg = 24;
+    }
+}
+
+// AliveMessage 用于通知远程对等体存在和活动的信息。
+message AliveMessage {
+    // Member 用于描述对等体的成员身份和状态。
+    Member membership = 1;
+    // Timestamp 用于表示消息的事件信息，包括逻辑事件的增量数和序列号。
+    PeerTime timestamp = 2;
+    // Identity 对等体的身份信息。
+    bytes identity = 4;
+}
+
+// MembershipRequest 该结构体用于向远程对等体请求成员信息。
+message MembershipRequest {
+    // SelfInformation 字段包含了关于自身的信息。
+    Envelope self_information = 1;
+    // Known 包含了自己已知对等体的信息。
+    repeated bytes known = 2;
+}
+
+// MembershipResponse 结构体用于响应成员请求。
+message MembershipResponse {
+    // Alive 存活的成员列表，包含一组 Envelope，每个 Envelope 包含有关存活成员的信息。
+    repeated Envelope alive = 1;
+    // Dead 已经离开的成员列表，包含一组 Envelope，每个 Envelope 包含有关已离开成员的信息。
+    repeated Envelope dead = 2;
+}
+
+// DataMessage 结构体包含一个完整的区块。
+message DataMessage {
+    // Payload 有效负载，用于包含一个完整的区块。
+    Payload payload = 1;
+}
+
+// GossipHello 结构体用于在对等体之间同步数据时使用。
+message GossipHello {
+    // Nonce 用于标识消息的唯一性。
+    uint64 nonce = 1;
+    // Metadata 存储元数据信息。
+    bytes metadata = 2;
+    // MsgType 指示消息的类型和目的。
+    PullMsgType msg_type = 3;
+}
+
+
+// DataDigest 结构体用于从接收对等体发送到发起对等体，包含了接收对等体拥有的数据项的摘要信息。
+message DataDigest {
+    // Nonce 用于标识消息的唯一性。
+    uint64 nonce = 1;
+    // Digests 数据摘要列表，包含了接收对等体所拥有的数据项。
+    repeated bytes digests = 2;
+    // MsgType 指示消息的目的和类型。
+    PullMsgType msg_type = 3;
+}
+
+// DataRequest 结构体用于发起对等体向远程对等体请求特定数据块的消息。
+message DataRequest {
+    // Nonce 用于标识消息的唯一性。
+    uint64 nonce = 1;
+    // Digests 数据摘要列表，用于请求远程对等体的特定数据块。
+    repeated bytes digests = 2;
+    // MsgType 指示消息的目的和类型。
+    PullMsgType msg_type = 3;
+}
+
+// DataUpdate 用于在数据传输过程中从接收方向发起方发送数据更新的最后一条消息。
+message DataUpdate {
+    // Nonce 用于确保消息的唯一性。
+    uint64 nonce = 1;
+    // Data 一个 Envelope 类型的数组，用于存储数据。
+    repeated Envelope data = 2;
+    // MsgType 标识消息的类型。
+    PullMsgType msg_type = 3;
+}
+
+// Empty 一个空消息，用于 Ping 请求。
+message Empty{}
+
+// ConnEstablish 该结构体用于在建立连接时使用，当一个对等体连接到另一个对等体时，它会通过
+// 发送这个消息来证明自己的身份。
+message ConnEstablish {
+    // PkiId 用于证明对等体的身份。
+    bytes pki_id = 1;
+    // Identity 对等体的身份信息。
+    bytes identity = 2;
+    // TlsCertHash TLS 证书的哈希值，用于验证对等体的 TLS 证书。
+    bytes tls_cert_hash = 3;
+    // Probe 探测标志，指示是否进行连接探测。
+    bool probe = 4;
+}
+
+// StateInfo 结构体用于对等体向其他对等体中继其状态信息。
+message StateInfo {
+    // Timestamp 对等体的时间戳信息。
+    PeerTime timestamp = 1;
+    // PkiId 用于标识对等体。
+    bytes pki_id = 2;
+    // ChannelMAC 通道消息的认证码，用于证明发送消息的对等体知道通道的名称。
+    bytes channel_MAC = 3;
+    // Properties 属性信息。
+    Properties properties = 4;
+}
+
+// StateInfoSnapshot 是对 StateInfo 消息的聚合，其中包含了多个 Envelope 元素。
+message StateInfoSnapshot {
+    // Elements 可在一些情况下传输大量状态信息。
+    repeated Envelope elements = 1;
+}
+
+// StateInfoPullRequest 该结构体用于发起对远程对等体的请求，以获取状态信息的快照。
+message StateInfoPullRequest {
+    // ChannelMAC 是一个认证码，用于证明发送该消息的对等体知道通道的名称。
+    bytes channel_MAC = 1;
+}
+
+// RemoteStateResponse 此结构体用于向远程对等体发送一组区块数据。
+message RemoteStateResponse {
+    // Payloads 包含若干个完整的区块数据。
+    repeated Payload payloads = 1;
+}
+
+// RemoteStateRequest 此结构体用于在分布式系统中从远程对等体请求特定范围的区块数据。
+message RemoteStateRequest {
+    // StartSeqNum 请求的区块的其实序列号。
+    uint64 start_seq_num = 1;
+    // EndSeqNum 请求的区块的结束序列号。
+    uint64 end_seq_num = 2;
+}
+
+// LeadershipMessage 包含了领导者信息的相关内容。
+message LeadershipMessage {
+    // PkiId 是一个字节数组，用于表示公钥基础设施的标识。
+    bytes pki_id = 1;
+    // Timestamp 用于表示消息的时间戳。
+    PeerTime timestamp = 2;
+    // IsDeclaration 用于指示此消息是否为声明自己是 leader 的消息。
+    bool is_declaration = 3;
+}
+
+// PeerIdentity 包含了对等体的身份信息。
+message PeerIdentity {
+    // PkiId 字段是一个字节数组，用于表示公钥基础设施的标识。
+    bytes pki_id = 1;
+    // Cert 用于存储证书信息。
+    bytes cert = 2;
+    // Metadata 用于存储关于对等体的元数据信息。
+    bytes metadata = 3;
+}
+
+// Acknowledgement 结构体用于发送对某个操作的确认或响应，其中可能包含错误信息。
+message Acknowledgement {
+    // Error 响应中可能包含的错误信息。
+    string error = 1;
+}
+
+// RemotePvtDataRequest 结构体用于请求缺失的私有读写集。
+message RemotePvtDataRequest {
+    // Digests 是一个元素类型为 PvtDataDigest 的数组，包含若干个私有数据的摘要。
+    repeated PvtDataDigest digests = 1;
+}
+
+// RemotePvtDataResponse 结构体用于响应对私有数据的请求。
+message RemotePvtDataResponse {
+    // Elements 是一个元素类型为 PvtDataElement 的数组，包含若干个私有数据。
+    repeated PvtDataElement elements = 1;
+}
+
+// PrivateDataMessage 用于封装私有数据。
+message PrivateDataMessage {
+    PrivatePayload payload = 1;
+}
+
+// PeerTime 该结构体用于表示对等体的时间戳。
+message PeerTime {
+    // IncNum 用于表示对等体的逻辑时间的增量数。
+    uint64 inc_num = 1;
+    // SeqNum 用于表示对等体的逻辑时间的序列号。
+    uint64 seq_num = 2;
+}
+
+// Properties 包含了对等体的一些属性信息。
+message Properties {
+    // LedgerHeight 账本高度。
+    uint64 ledger_height = 1;
+    // LeftChannel 是否离开通道的标志。
+    bool left_channel = 2;
+    // Chaincodes 链码列表。
+    repeated Chaincode chaincodes = 3;
+}
+
+// Member 成员信息。
+message Member {
+    // Endpoint 成员的网络端点信息。
+    string endpoint = 1;
+    // Metadata 成员的元数据。
+    bytes metadata = 2;
+    // PkiId 标识成员。
+    bytes pki_id = 3;
+}
+
+// Payload 内包含了一个区块的信息。
+message Payload {
+    // SeqNum 表示序列号。
+    uint64 seq_num = 1;
+    // Data 用于存储区块数据。
+    bytes data = 2;
+    // PrivateData 该字段是一个字节数组列表，用于存储多个私有数据。
+    repeated bytes private_data = 3;
+}
+
+// PrivatePayload 结构体用于封装私有数据。
+message PrivatePayload {
+    // CollectionName 用于在路由时基于集合分区进行定位。
+    string collection_name = 1;
+    // Namespace 用于标识私有数据所属的命名空间。
+    string namespace = 2;
+    // TxId 表示交易的 ID。
+    string tx_id = 3;
+    // PrivateRwset 用于存储私有读写集。
+    bytes private_rwset = 4;
+    // PrivateSimHeight 表示私有数据提交高度。
+    uint64 private_sim_height = 5;
+    // CollectionConfigs 此字段类型为 ppeer.CollectionConfigPackage，用于存储集合的配置信息。
+    ppeer.CollectionConfigPackage collection_configs = 6;
+}
+
+// Chaincode 结构体表示安装在一个对等体上的链码信息。
+message Chaincode {
+    // Name 链码的名称。
+    string name = 1;
+    // Version 链码的版本号。
+    string version = 2;
+    // Metadata 链码的元数据信息。
+    bytes metadata = 3;
+}
+
+// PvtDataDigest 定义了私有数据的摘要信息。
+message PvtDataDigest {
+    // TxId 是一个字符串，表示交易的 ID。
+    string tx_id = 1;
+    // Namespace 表示私有数据所属的命名空间。
+    string namespace = 2;
+    // Collection 表示私有数据所属的集合。
+    string collection = 3;
+    // BlockSeq 表示所属的区块的序列号。
+    uint64 block_seq = 4;
+    // SeqInBlock 表示私有数据在区块中的位置。
+    uint64 seq_in_block = 5;
+}
+
+// PvtDataElement 包含了私有数据的元素信息。
+message PvtDataElement {
+    // Digest 是一个 PvtDataDigest 类型的字段，包含私有数据的摘要信息。
+    PvtDataDigest digest = 1;
+    // Payload 该字段是一个字节数组列表，用于存储序列化后的键值读写集数据 (kvrwset.KVRWSet)。
+    repeated bytes payload = 2;
+}
+
+// PullMsgType 指定了 Gossip 消息的类型。
+enum PullMsgType {
+    // UNDEFINED 表示未定义的消息类型。
+    UNDEFINED = 0;
+    // BLOCK_MSG 表示包含一个区块的消息。
+    BLOCK_MSG = 1;
+    // IDENTITY_MSG 表示包含身份信息的消息类型。
+    IDENTITY_MSG = 2;
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --proto_path=$MAYY_HOME/protobuf/ppeer --go_out=plugins=grpc,paths=source_relative:. message.proto

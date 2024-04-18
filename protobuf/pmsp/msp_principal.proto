@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pmsp";
+
+package pmsp;
+
+// MSPPrincipal 旨在表示以 MSP 为中心的一组身份，具体而言，该结构允许定义以下内容：
+//  1. 一组属于同一 MSP 的身份。
+//  2. 一组属于同一 MSP 中同一组织单位的身份。
+//  3. 一组管理特定 MSP 的身份。
+//  4. 一个具体的身份。
+// 根据下面的这些字段来表示这些组：
+//  - Classification：定义 MSP 中身份的分类类型，Classification 可以有三个值：
+//      1. ByMSPRole：表示基于预定义的 MSP 规则之一 (admin 和 member) 对 MSP 内的身份进行分类。
+//      2. ByOrganizationUnit：表示基于身份所属的组织单位对 MSP 内的身份进行分类。
+//      3. ByIdentity：表示 MSPPrincipal 映射到单个身份/证书，这意味着 Principal 字段是身份的字节信息。
+message MSPPrincipal {
+    enum Classification {
+        ROLE                = 0; // ROLE 表示 MSP 网络中的成员角色或者管理员角色。
+        ORGANIZATION_UNIT   = 1; // ORGANIZATION_UNIT 表示基于身份所属的组织单位在 MSP 中的分类。
+        IDENTITY            = 2; // IDENTITY 表示由单个身份/证书组成的主体。
+        ANONYMITY           = 3; // ANONYMITY 表示可以强制使身份匿名或具名的主体。
+        COMBINED            = 4; // COMBINED 表示组合的主体。
+    }
+
+    // PrincipalClassification 表示如何处理 Principal 的分类方式，分类方式包括：
+    //  1. ByOrganizationUnit：表示 Principal 中包含 MSP 处理的组织的名称。
+    //  2. ByIdentity：表示 Principal 中包含特定身份。
+    //  3. 默认值：表示 Principal 包含默认由所有 MSP 支持的组中的一个，admin 或者 member。
+    Classification principal_classification = 1;
+
+    // Principal 表示完成策略主体定义的 Principal，对于默认的主体类型，Principal 可以是 admin 或者是
+    // member；对于 ByOrganizationUnit / ByIdentity 分类类型，PolicyPrincipal 从组织单位或者身份中
+    // 获取其值；对于 Combined 分类类型，Principal 是一个序列化的 CombinedPrincipal。
+    bytes principal = 2;
+}
+
+// OrganizationUnit 用于管理策略主体的 Principal 字段中特定组织单位成员的组织。
+message OrganizationUnit {
+    string msp_identifier               = 1; // MspIdentifier 表示此组织单位所指的 MSP 的标识符。
+    string organization_unit_identifier = 2; // OrganizationUnitIdentifier 定义 MSP 标识符所指的组织单位。
+    bytes certifiers_identifier         = 3; // CertifiersIdentifier 是与此组织单元相关的证书信任链的哈希值。
+}
+
+// MSPRole 用于在 MSPPrincipal 的 Principal 字段中定义 MSP 中的两个专用角色之一 (admin 和 member) 的组织。
+message MSPRole {
+    string msp_identifier = 1; // MspIdentifier 表示此主体所指的 MSP 的标识符。
+
+    enum MSPRoleType {
+        MEMBER  = 0; // MEMBER 表示 MSP 成员。
+        ADMIN   = 1; // ADMIN 表示 MSP 管理员。
+        CLIENT  = 2; // CLIENT 表示 MSP 客户端。
+        PEER    = 3; // PEER 表示 MSP 节点。
+        ORDERER = 4; // ORDERER 表示 MSP 排序服务。
+    }
+
+    // MSPRoleType 定义了一个身份在标识符为 MSPIdentifier 的 MSP 中应该拥有哪些可用的预定义 MSP 角色。
+    MSPRoleType role = 2;
+}
+
+// MSPIdentityAnonymity 可以用来强制一个身份是匿名或具名的。
+message MSPIdentityAnonymity {
+    enum MSPIdentityAnonymityType {
+        NOMINAL     = 0; // NOMINAL 表示一个具名的 MSP 身份。
+        ANONYMOUS   = 1; // ANONYMOUS 表示一个匿名的 MSP 身份。
+    }
+
+    MSPIdentityAnonymityType anonymity_type = 1; // AnonymityType 表示一个 MSP 身份是匿名的还是具名的。
+}
+
+// CombinedPrincipal 当 PrincipalClassification 表明需要 combined 形式的主体时，CombinedPrincipal 将管
+// 理策略主体的 Principal 字段的组织
+message CombinedPrincipal {
+    repeated MSPPrincipal principals = 1; // Principals 表示 combined 主体。
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --go_out=,paths=source_relative:. msp_principal.proto

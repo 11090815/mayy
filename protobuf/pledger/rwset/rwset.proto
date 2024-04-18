@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pledger/rwset";
+
+package rwset;
+
+// TxReadWriteSet 用于封装一个事务的读写集，提供了一个标准化的方式来表示一个事务读写
+// 集，以便在分布式账本中进行共识和验证。它使得不同的链码和数据模型可以共享相同的结构
+// 格式，从而简化了跨链码交互和数据模型的协作。
+message TxReadWriteSet {
+    enum DataModel {
+        KV = 0;
+    }
+
+    // DataModel 指定了数据模型的值，在这里，只有 KV (key-value) 一种数据模型。 
+    DataModel data_model = 1;
+    // NsRwset 是一个链码特定的读写集列表，每个链码都有一个对应的读写集，读写集包含了
+    // 在事务中读取和写入键值对的信息。
+    repeated NsReadWriteSet ns_rwset = 2;
+}
+
+message NsReadWriteSet {
+    // Namespace 指定了命名空间，它是一个逻辑上的容器，用于将相关的键值对组织在一起。
+    string namespace = 1;
+    // Rwset 字节数组类型，表示数据模型序列化后的 protobuf 消息，对于 KV 和文档数据模型，
+    // 使用 kvrwset.KVRWSet 来表示。
+    bytes rwset = 2;
+    // CollectionHashedRwset 是一个元素为 CollectionHashedReadWriteSet 的列表。
+    repeated CollectionHashedReadWriteSet collection_hashed_rwset = 3;
+}
+
+// CollectionHashedReadWriteSet 结构体用于封装一个集合的私有读写集的哈希表示，以便进行
+// 验证和鉴权。通过这个结构体，可以在验证私有读写集时，快速比对哈希值，确保私有读写集的完
+// 整性和真实性。
+message CollectionHashedReadWriteSet {
+    // CollectionName 指定了集合的名称。
+    string collection_name = 1;
+    // HashedRwset 字节数组类型，表示数据模型序列化后的 protobuf 消息的哈希值，对于
+    // KV 和文档数据，使用 kvrwset.HashedRWSet 来表示哈希值。
+    bytes hashed_rwset = 2;
+    // PvtRwsetHash 字节数组类型，表示整个特定集合的私有读写集的哈希值，这有助于有效地验证
+    // 私有读写集的完整性。
+    bytes pvt_rwset_hash = 3;
+}
+
+// TxPvtReadWriteSet 结构体的作用是提供了一个标准化的方式来表示一个事务的私有读写集，以便
+// 在分布式账本中进行共识和验证。与 TxReadWriteSet结构体类似，它使得不同的链码和数据模型可
+// 以共享相同的结构和格式，从而简化了跨链码交互和数据模型的协作。私有读写集是链码执行过程中
+// 生成的，用于维护私有数据的变更。
+message TxPvtReadWriteSet {
+    // DataModel 指定了数据模型的值，在这里表示事务的数据模型。
+    TxReadWriteSet.DataModel data_model = 1;
+    // NsPvtRwset 一个链码特定的私有读写集列表。每个链码都有一个对应的私有读写集。私有读写
+    // 集包含了在事务中读取和写入的私有键值对的信息。
+    repeated NsPvtReadWriteSet ns_pvt_rwset = 2;
+}
+
+// NsPvtReadWriteSet 结构体的作用是记录链码的私有读写集信息。其中，CollectionPvtRwset 字
+// 段存储了链码中使用的集合的私有读写集。私有读写集是链码执行过程中生成的，用于维护私有数据
+// 的变更。通过这个结构体，可以将不同链码的私有读写集和集合的私有读写集进行组织和管理，以进
+// 行共识和验证。
+message NsPvtReadWriteSet {
+    // Namespace 指定了命名空间，它是一个逻辑上的容器，用于将相关的键值对组织在一起。
+    string namespace = 1;
+    // CollectionPvtRwset 是一个元素为 CollectionPvtReadWriteSet 的列表，每个
+    // CollectionPvtReadWriteSet 对应一个集合，并包含该集合的私有读写集。
+    repeated CollectionPvtReadWriteSet collection_pvt_rwset = 2;
+}
+
+// CollectionPvtReadWriteSet 结构体的作用是记录集合的私有读写集信息。私有读写集是链码执
+// 行过程中生成的，用于维护集合的私有数据的变更。通过这个结构体，可以将不同集合的私有读写
+// 集进行组织和管理，以便进行共识和验证。
+message CollectionPvtReadWriteSet {
+    // CollectionName 是字符串类型，指定了集合的名称。
+    string collection_name = 1;
+    // Rwset 是字节数组类型，表示数据模型序列化后的 protobuf 消息。对于 KV 和文档数据
+    // 模型，使用 kvrwset.KVRWSet 来表示私有读写集。
+    bytes rwset = 2;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. rwset.proto

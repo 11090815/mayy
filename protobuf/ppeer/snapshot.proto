@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "github.com/google/protobuf/empty.proto";
+import "pcommon/common.proto";
+
+// SnapshotRequest 结构体用于生成查询或取消快照的请求。
+message SnapshotRequest {
+    // SignatureHeader 用于存储创建者身份和随机数的签名头。
+    pcommon.SignatureHeader signature_header = 1;
+    // ChannelId 表示要生成快照的通道。
+    string channel_id = 2;
+    // BlockNumber 要生成快照的区块号。
+    uint64 block_number = 3;
+}
+
+// SnapshotQuery 结构体用于生成查询快照的请求。
+message SnapshotQuery {
+    // SignatureHeader 用于存储创建者身份和随机数的签名头。
+    pcommon.SignatureHeader signature_header = 1;
+    // ChannelId 表示要查询快照的通道 ID。
+    string channel_id = 2;
+}
+
+// SignedSnapshotRequest 一个被签名包裹的快照查询请求，该结构体用于将请求的字节数据和相
+// 应的签名一起打包，以便在快照请求中进行验证。
+message SignedSnapshotRequest {
+    // Request 存储了序列化后的 SnapshotRequest 或 SnapshotQuery 的字节数据。
+    bytes request = 1;
+    // Signature 对快照请求进行签名后得到的数字签名，可以利用客户端的身份证书进行验证。
+    bytes signature = 2;
+}
+
+// QueryPendingSnapshotResponse 该结构体用于指定查询待处理快照请求的响应内容，它包含一个重复的字段，
+// 用于存储待处理快照请求的区块号列表。
+message QueryPendingSnapshotResponse {
+    // BlockNumbers 用于存储待处理快照请求的区块号。
+    repeated uint64 block_numbers = 1;
+}
+
+// Snapshot 服务提供了三个方法来处理快照请求。
+service Snapshot {
+    // Generate 输入 SignedSnapshotRequest，包含序列化的快照请求字节数据和相应的签名，不返回任何结果。
+    // 该方法用于生成一个快照请求。客户端需要提供签名后的快照请求数据作为输入。服务器将根据请求生成相应
+    // 的快照。
+    rpc Generate(SignedSnapshotRequest) returns (google.protobuf.Empty);
+    // Cancel 输入 SignedSnapshotRequest，包含序列化的快照请求字节数据和相应的签名，不返回任何结果。
+    // 该方法用于取消一个快照请求。客户端需要提供签名后的快照请求数据作为输入。服务器将根据请求取消对
+    // 应的快照生成。
+    rpc Cancel(SignedSnapshotRequest) returns (google.protobuf.Empty);
+    // QueryPendings 输入 SignedSnapshotRequest，包含序列化的快照请求字节数据和相应的签名，返回
+    // QueryPendingSnapshotResponse，包含待处理快照请求的区块号列表。该方法用于查询待处理的快照
+    // 请求。客户端需要提供签名后的快照查询请求数据作为输入。服务器将返回待处理快照请求的区块号列表
+    // 作为响应结果。
+    rpc QueryPendings(SignedSnapshotRequest) returns (QueryPendingSnapshotResponse);
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --go_out=plugins=grpc,paths=source_relative:. snapshot.proto

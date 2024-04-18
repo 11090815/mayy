@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pledger/queryresult";
+
+package queryresult;
+
+import "github.com/google/protobuf/timestamp.proto";
+
+// KV 结构体是一个用于表示键值对的数据结构。
+message KV {
+    // Namespace 用于标识键值对所属的命名空间，命名空间可以理解为对键值对进行分类或分组的方式，
+    // 类似于目录结构中的文件夹，通过命名空间可以方便地对键值对进行管理和查找。
+    string namespace = 1;
+    // Key 用于唯一标识一个键值对的键，在同一个命名空间中，每个键必须是唯一的。
+    string key = 2;
+    // Value 与键对应的值，值可以是任意数据，是一个字节数组，具体的值解析方式需要根据具体的应用
+    // 场景进行定义和处理。
+    bytes value = 3;
+}
+
+// KeyModification 结构体用于表示对键的修改操作。
+message KeyModification {
+    // TxId 用于标识进行该键修改操作的事务的唯一 ID，事务 ID 可以用于追踪和记录事务的执行情况，
+    // 以及确保操作的一致性和可靠性。
+    string tx_id = 1;
+    // Value 表示对键进行修改后的新值，值可以是任意数据，是一个字节数组，具体的值解析方式需要根
+    // 据具体的应用场景进行定义和处理。
+    bytes value = 2;
+    // Timestamp 用于记录对键进行修改操作的时间，时间戳可以用于排序或追踪键的修改历史，以及进行
+    // 与时间相关的查询和分析。
+    google.protobuf.Timestamp timestamp = 3;
+    // IsDelete 表示该操作是否是删除操作，当 IsDelete 为 true 时，表示对键进行了删除操作，当
+    // IsDelete 为 false 时，表示对键进行了修改操作。
+    bool is_delete = 4;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --go_out=,paths=source_relative:. kv_query_result.proto

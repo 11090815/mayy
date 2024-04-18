@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pcommon";
+
+package pcommon;
+
+// BlockchainInfo 消息类型包含有关区块链账本的信息，例如当前区块的高度、当前
+// 区块的哈希值以及上一个区块的哈希值。
+message BlockchainInfo {
+    uint64 height           = 1;
+    bytes currentBlockHash  = 2;
+    bytes previousBlockHash = 3;
+
+    // BootstrappingSnapshotInfo 字段用于指定引导快照的信息，如果通道是从快
+    // 照引导的，则包含快照的最后一个区块的信息。如果通道不是从快照引导的，则
+    // 该字段为 nil。
+    BootstrappingSnapshotInfo bootstrappingSnapshotInfo = 4;
+}
+
+// BootstrappingSnapshotInfo 消息类型包含有关引导快照的信息。
+message BootstrappingSnapshotInfo {
+    // LastBlockInSnapshot 字段表示快照中的最后一个区块，是一个无符号 64 位整数。
+    uint64 lastBlockInSnapshot = 1;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --go_out=,paths=source_relative:. ledger.proto

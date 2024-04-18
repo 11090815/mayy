@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "pcommon/policies.proto";
+import "policy.proto";
+
+// CollectionConfigPackage 是一个装载了 CollectionConfig 消息数组的结构体。
+message CollectionConfigPackage {
+    repeated CollectionConfig config = 1;
+}
+
+// CollectionConfig 用于定义集合对象的配置。
+message CollectionConfig {
+    oneof payload {
+        StaticCollectionConfig static_collection_config = 1;
+    }
+}
+
+// StaticCollectionConfig（静态集合配置）是一个消息类型，用于定义静态集合对象的配置参数。静态集合是在链码实例化时已知且不可更改的集合。
+message StaticCollectionConfig {
+    // Name 表示在指定链码内的集合名称。
+    string name = 1;
+
+    // MemberOrgsPolicy 表示一个指向配置块中的策略的引用，用于定义哪些组织可以访问该集合的私有数据。
+    CollectionPolicyConfig member_orgs_policy = 2;
+
+    // RequiredPeerCount 表示在背书时私有数据必须发送到的最小对等节点数量。如果无法发送到至少这么多的对等节点，则背书将失败。
+    int32 required_peer_count = 3;
+
+    // MaximumPeerCount 表示在背书时私有数据将发送到的最大对等节点数量。该值必须大于 RequiredPeerCount。
+    int32 maximum_peer_count = 4;
+
+    // BlockToLive 表示集合数据过期的块数。例如，如果将值设置为 10，则在块号为 100 的键最后修改后，将在块号 111 时
+    // 清除。如果该值为零，则视为 MaxUint64。
+    uint64 block_to_live = 5;
+
+    // MemberOnlyRead 表示是否只有集合成员客户端可以读取私有数据（如果设置为 true），或者连非成员也可以读取数
+    // 据（如果设置为 false，例如，如果您想在链码中实现更细粒度的访问逻辑）。
+    bool member_only_read = 6;
+
+    // MemberOnlyWrite 表示是否只有集合成员客户端可以写入私有数据（如果设置为 true），或者连非成员也可以写入数
+    // 据（如果设置为 false，例如，如果您想在链码中实现更细粒度的访问逻辑）。
+    bool member_only_write = 7;
+
+    // EndorsementPolicy 表示一个指向配置块中的策略的引用，用于定义该集合的背书策略。
+    ApplicationPolicy endorsement_policy = 8;
+}
+
+// CollectionPolicyConfig（集合策略配置）是一个消息类型，用于定义集合的策略配置。初始情况下，策略配置只能包含
+// 一个 SignaturePolicyEnvelope。将来，SignaturePolicy 可能会被更通用的 Policy 替代。在配置中，可以含实际策
+// 略的引用字符串。
+message CollectionPolicyConfig {
+    oneof payload {
+        // SignaturePolicy 初始情况下，仅支持 SignaturePolicyEnvelope 作为略。SignaturePolicyEnvelope 是一个表示签名策略的消息类型。
+        pcommon.SignaturePolicyEnvelope signature_policy = 1;
+        // Reference 计划在将来添加对策略的引用。这个字段是一个字符串，表示将来可能会引用其他策。
+        string reference = 2;
+    }
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. collection.proto

@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/pmsp";
+
+package pmsp;
+
+// MSPConfig 收集了 msp 的所有配置信息。
+message MSPConfig {
+    int32 type      = 1; // Type 反映 msp 的类型，默认是 MAYY，其实现基于 X.509。
+    bytes config    = 2; // Config 表示 msp 特定的配置信息。
+}
+
+// MayyMSPConfig 收集了 Mayy Config 的所有配置信息。
+message MayyMSPConfig {
+    // Name 表示 msp 的标识符，由管理该 msp 的应用程序选择。
+    string name = 1;
+
+    // RootCerts 表示 msp 信任的根证书列表，这些证书用于证书验证。
+    repeated bytes root_certs = 2;
+
+    // IntermediateCerts 表示 msp 信任的中间证书列表，在证书验证时，验证过程会尝试从待验证的证书构建一条
+    // 路径，该路径的一端是待验证的证书，另一端是 RootCerts 字段中的某个证书，如果路径长度超过 2，证书验证
+    // 过程会在 IntermediateCerts 字段中搜索中间证书。
+    repeated bytes intermediate_certs = 3;
+
+    // Admins 表示该 msp 的管理员身份。
+    repeated bytes admins = 4;
+
+    // RevocationList 表示由 msp 维护的被吊销的证书列表。
+    repeated bytes revocation_list = 5;
+
+    // SigningIdentity 保存对等体将要使用的签名身份信息，该信息将由前面定义的 msp 导入。
+    SigningIdentityInfo signing_identity = 6;
+
+    // OrganizationUnitIdentifiers 表示属于该 msp 配置的一个或多个 Mayy 组织单元标识符。
+    repeated MayyOUIdentifier organization_unit_identifiers = 7;
+
+    // CryptoConfig 包含该 msp 使用的加密算法的配置参数。
+    MayyCryptoConfig crypto_config = 8;
+
+    // TlsRootCerts 表示该 msp 信任的 TLS 根证书列表。
+    repeated bytes tls_root_certs = 9;
+
+    // TlsIntermediateCerts 表示该 msp 信任的 TLS 中间证书列表。
+    repeated bytes tls_intermediate_certs = 10;
+
+    // MayyNodeOus 包含根据 OUs 区分 clients、peers 和 orderers 的配置信息。
+    MayyNodeOUs mayy_node_ous = 11;
+}
+
+// MayyCryptoConfig 由 msp 维护，其内包含 msp 配置加密算法的配置信息。
+message MayyCryptoConfig {
+    // SignatureHashFamily 指定在签名和验证签名期间所使用的哈希算法。
+    string signature_hash_family = 1;
+
+    // IdentityIdentifierHashFunction 指定在计算 msp 身份标识符时所使用的哈希算法。
+    string identity_identifier_hash_function = 2;
+}
+
+// SigningIdentityInfo 表示与对等端用于生成背书的签名标识相关的配置信息。
+message SigningIdentityInfo {
+    // PublicSigner 内持有签名标识的公共信息，对于采用 X.509 的 msp 提供商，
+    // 此字段将会是 X.509 证书。
+    bytes public_signer = 1;
+
+    // PrivateSigner 表示 peer 的签名标识的私钥。
+    KeyInfo private_signer = 2;
+}
+
+// KeyInfo 表示已经存储在 csp/keystore 中或将导入 csp 密钥库的密钥材料中的(秘密)密钥。
+message KeyInfo {
+    // KeyIdentifier 表示密钥标识符，即密钥的 SKI。
+    string key_identifier = 1;
+
+    // KeyMaterial 导入密钥时所需的材料。
+    bytes key_material = 2;
+}
+
+// MayyOUIdentifier 表示组织单元及其相关的信任标识符链。
+message MayyOUIdentifier {
+    // Certificate 代表证书链中的第二个证书。(注意，证书链中的第一个证书应该是一个身份的证书)。
+    // 它必须与根证书或中间 CA 的证书相对应，MSP 可以识别该消息所属的 CA。从这个证书开始，计算
+    // 出一个证书链并绑定到指定的 OrganizationUnitIdentifier。
+    bytes certificate = 1;
+
+    // OrganizationUnitIdentifier 定义了 MSP 下标识的组织单元。
+    string organization_unit_identifier = 2;
+}
+
+// MayyNodeOUs 包含基于 OU 区分客户端、对等端和订购者的配置。如果 NodeOUs 识别被启用，那么不包
+// 含任何指定 OU 的 MSP 标识将被认为无效。
+message MayyNodeOUs {
+    // Enable 如果为真，则不包含指定的任何 OU 的 msp 标识将被认为无效。
+    bool enable = 1;
+
+    // ClientOuIdentifier 表示客户端的 OU 标识符。
+    MayyOUIdentifier client_ou_identifier = 2;
+
+    // PeerOuIdentifier 表示 peer 的 OU 标识符。
+    MayyOUIdentifier peer_ou_identifier = 3;
+
+    // AdminOuIdentifier 表示 admin 的 OU 标识符。
+    MayyOUIdentifier admin_ou_identifier = 4;
+
+    // OrdererOuIdentifier 表示 orderer 的 OU 标识符。
+    MayyOUIdentifier orderer_ou_identifier = 5;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --go_out=,paths=source_relative:. msp_config.proto

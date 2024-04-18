@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pledger/rwset/kvrwset";
+
+package kvrwset;
+
+// KVRWSet 结构体用于封装基于 KV 或文档数据模型的链码的读写集。它被用于表示公共数据私有数据的读写集。
+message KVRWSet {
+    // Reads 表示链码对键值对的读取操作。数组内的每个元素是一个 KVRead 结构体，包含要读取的键和对应的版本号。
+    repeated KVRead reads = 1;
+    // RangeQueriesInfo 表示链码对键范围查询的信息。数组内的每个元素是一个 RangeQueryInfo 结构体，包含查询的起始和结束键。
+    repeated RangeQueryInfo range_queries_info = 2;
+    // Writes 表示链码对键值对的写入操作。数组内的每个元素是一个 KVWrite 结构体，包含要写入的键、值和对应的版本号。
+    repeated KVWrite writes = 3;
+    // MetadataWrites 表示链码对键值元数据的写入操作。数组内的每个元素是一个 KVMetadataWrite 结构体，包含要写入的键、元数据和对应的版本号。
+    repeated KVMetadataWrite metadata_writes = 4;
+}
+
+// HashedRWSet 结构体用于封装基于哈希的读写集。它主要在提交交易时用于有效性和完整性校验。
+message HashedRWSet {
+    // HashedReads 表示使用哈希函数对读取的键进行哈希处理后的结果。数组中的每个元素是一个 KVReadHash 结构体，包含哈希后的键
+    // 和对应的版本号。
+    repeated KVReadHash hashed_reads = 1;
+    // HashedWrites 表示使用哈希函数对写入的键进行哈希处理后结果。数组中的每个元素是一个 KVWriteHash 结构体，包含哈希后的键、
+    // 值和对应的版本号。
+    repeated KVWriteHash hashed_writes = 2;
+    // MetadataWrites 表示使用哈希函数对元数据写入的键进行哈希处理后的结果。数组中的每个元素是一个 KVMetadataWriteHash结构体，
+    // 包含哈希后的键、元数据和对应的版本号。
+    repeated KVMetadataWriteHash metadata_writes = 3;
+}
+
+// KVRead 结构体的用途是记录在事务模拟过程中读取的键和对应的版本号。它被用于构建 KVRWSet 结构体的 Reads 字段，以记录链码对数据的读取操作。
+message KVRead {
+    // Key 表示要读取的键。
+    string key = 1;
+    // Version 表示读取键的版本号。如果版本号为 nil，则表示事务读取的键不存在。
+    Version version = 2;
+}
+
+// KVWrite 结构用于表示在事务模过程中进行写入（更新/删除）操作。
+message KVWrite {
+    // Key 表示要写入的键
+    string key = 1;
+    // IsDelete 表示是否是删除操作。如果为true表示要删除键；如果为false，则表示要更新键。
+    bool is_delete = 2;
+    // Value 表示要写入的值。
+    bytes value = 3;
+}
+
+// KVMetadataWrite 结构体用于表示与一个键关联的所有元数据条目。
+message KVMetadataWrite {
+    // Key 表示若干元数据条目所关联的键。
+    string key = 1;
+    // Entries 表示所关联的元数据条目，是一个数组，其内的每个元素是一个 KVMetadataEntry 结构体，包含元数据的名称和值。
+    repeated KVMetadataEntry entries = 2;
+}
+
+// KVReadHash 结构体类似于 KVRead 结构体，但是它包含的是键的哈希值而不是键本身。
+message KVReadHash {
+    // KeyHash 表示键的哈希值。
+    bytes key_hash = 1;
+    // Version 与 KVRead 结构体相同，表示读取键的版本号。
+    Version version = 2;
+}
+
+// KVWriteHash 结构体类似于 KVWrite 结构体，用于表示在事务模拟过程中进行的写入（更新/删除）操作。
+message KVWriteHash {
+    // KeyHash 表示要写入的键的哈希值。
+    bytes key_hash = 1;
+    // IsDelete 表示是否是删除操作。如果为true表示要删除键；如果为false，则表示要更新键。
+    bool is_delete = 2;
+    // ValueHash 表示要写入的值的哈希值。
+    bytes value_hash = 3;
+    // IsPurge 表示是否是清除操作。如果为true，则表示要清除键和对应的值。
+    bool is_purge = 4;
+}
+
+// KVMetadataWriteHash 结构体用于表示与一个键的哈希值关联的所有元数据条目的写操作。
+message KVMetadataWriteHash {
+    // KeyHash 表示要写元数据的键的希值。
+    bytes key_hash = 1;
+    // Entries 表示要写入元数据条目。是一个数组，其内的每个元素是一个 KVMetadataEntry 结构体，包含元数据的名称和值。
+    repeated KVMetadataEntry entries = 2;
+}
+
+// KVMetadataEntry 结构体用于表示与键或者键的哈希相关联的元数据中的具体条目。
+message KVMetadataEntry {
+    // Name 表示元数据条目的名称。
+    string name = 1;
+    // Value 表示元数据条目的值。
+    bytes value = 2;
+}
+
+// Version 结构体用于封装一个键的版本信息。一个已提交键的版本由提交该键的交易的高度来表示。版本的高度被表示
+// 为一个元组 <blockNum, txNum>，其中 txNum 是在区块内的交易位置（从 0 开始）。
+message Version {
+    // BlockNum 区块号。
+    uint64 block_num = 1;
+    // TxNum 提交该键的交易在区块中的编号。
+    uint64 tx_num = 2;
+}
+
+// RangeQueryInfo 结构体用于封装交易在模拟过程中执行的范围查询的详细信息。它帮助在验证过程中保护交易免受幻读
+// 的影响，通过验证在事务模拟和验证之间是否有新的项在给定范围内被提交（除了对现有项的更新/删除进行常规检查）。
+message RangeQueryInfo {
+    // StartKey 表示范围查询的起始键。
+    string start_key = 1;
+    // EndKey 表示范围查询的结束键。
+    string end_key = 2;
+    // ItrExhausted 表示范围查询是否已耗尽。如果为true，则表示范围查询已经遍历完所有结果，否则表示范围查询还
+    // 有更多的结果等待读取。
+    bool itr_exhausted = 3;
+    // ReadsInfo 表示范围查询的读取信息。ReadsInfo 字段是一个 oneof 类型，可以是 RawReads 字段或 ReadsMerkleHashes 字段。
+    oneof reads_info {
+        // RawReads 表示范围查询的KVReads，即查询执行的结果中读取的项。其内的每个元素是一个 KVRead 结构体，记录了查询读取的键和对应的版本号。
+        QueryReads raw_reads = 4;
+        // ReadsMerkleHashes 如果范围查询的 KVReads 超过了预先配置的数量，ReadsMerkleHashes 字段将包含一个默克尔树哈希，用摘要表示范围查询的读取结果。
+        QueryReadsMerkleSummary reads_merkle_hashes = 5;
+    }
+}
+
+// QueryReads 结构体封装了作为查询执行结果而由交易读取的键值对的多个 KVRead。
+message QueryReads {
+    // KvReads 表示查询读取的项，是一个数组，其内的每个元素是一个 KVRead 结构体，包含读取的键和对应的版本号。
+    repeated KVRead kv_reads = 1;
+}
+
+// QueryReadsMerkleSummary 结构体封装了 QueryReads 的默克尔树哈希。它允许在查询结果存在的情况下，通过存储某些哈希而不是实际结果来减小 RWSet 的大小。
+message QueryReadsMerkleSummary {
+    // MaxDegree 表示树中任意级别的最大子节点数。
+    uint32 max_degree = 1;
+    // MaxLevel 包含具有少于 MaxDegree 节点的最低级别（从叶级别开始）。
+    uint32 max_level = 2;
+    // MaxLevelHashes 表示最高级别中的哈希值。
+    repeated bytes max_level_hashes = 3;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. kv_rwset.proto

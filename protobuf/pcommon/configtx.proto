@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pcommon";
+
+package pcommon;
+
+import "common.proto";
+import "policies.proto";
+
+// ConfigEnvelope 消息包含了一条链的所有配置，不依赖于先前的配置事务。
+message ConfigEnvelope {
+    // Config 序列化后的 Config 结构，表示配置信息。
+    Config config = 1;
+
+    // LastUpdate 最后一个生成当前配置的 CONFIG_UPDATE 消息，它的 Payload.Data 是一个序列化的
+    // ConfigUpdate。
+    Envelope last_update = 2;
+}
+
+// Config 消息表示特定通道的配置。
+message Config {
+    // Sequence 配置的序列号。
+    uint64 sequence = 1;
+
+    // ChannelGroup 通道的配置组，当允许 API 破坏时，应将其更改为 root。
+    ConfigGroup channel_group = 2;
+}
+
+message ConfigUpdateEnvelope {
+    // ConfigUpdate 用于存储序列化的 ConfigUpdate 结构。
+    bytes config_update = 1;
+
+    // Signatures 用于存储对 ConfigUpdate 的多个签名。
+    repeated ConfigSignature signatures = 2;
+}
+
+// ConfigUpdate 结构用于提交配置的子集，并要求排序节点应用此配置，它始终在 ConfigUpdateEnvelope 中
+// 提交，允许添加签名，从而生成新的配置。配置更新按照以下方式应用：
+//  1. 从 ReadSet 中的所有元素的版本与现有配置中的版本进行验证，如果读取版本不匹配，则配置更新失败。
+//  2. 忽略 WriteSet 中与 ReadSet 具有相同版本的任何元素。
+//  3. 收集 WriteSet 中每个剩余元素的相应 ModPolicy。
+//  4. 检查每个策略与 ConfigUpdateEnvelope 中的签名，任何无法验证的策略都会被拒绝。
+//  5. WriteSet 应用到 Config 中，并通过 ConfigGroupSchema 验证更新是否合法。
+message ConfigUpdate {
+    // ChannelId 表示此配置更新应适用于哪个通道。
+    string channel_id = 1;
+
+    // ReadSet 明确列出了已读取的配置部分，其中应该只设置了 Version。
+    ConfigGroup read_set = 2;
+
+    // WriteSet 列出了已写入的配置部分，其中应包括已更新的 Version。
+    ConfigGroup write_set = 3;
+
+    // IsolatedData 是一个映射，用于存储不会反映在结果配置中但仍需要用于其他目的的数据，例如 RsccSeedData。
+    map<string, bytes> isolated_data = 5;
+}
+
+// ConfigGroup 是一个层次化的数据结构，用于存储配置信息。
+message ConfigGroup {
+    // Version 表示配置组的版本。
+    uint64 version = 1;
+
+    // Groups 是一个映射，存储了子配置组，键是子配置组的名称，值是对应的 ConfigGroup 对象。
+    map<string, ConfigGroup> groups = 2;
+
+    // Values 是一个映射，用于存储配置值，键是配置值的名称，值是对应的 ConfigValue。
+    map<string, ConfigValue> values = 3;
+
+    // Policies 是一个映射，用于存储配置策略，键是策略的名称，值是对应的 ConfigPolicy 对象。
+    map<string, ConfigPolicy> policies = 4;
+
+    // ModPolicy 是一个字符串，表示配置组的修改策略。
+    string mod_policy = 5;
+}
+
+// ConfigValue 表示单个配置数据。
+message ConfigValue {
+    // Version 表示配置值的版本。
+    uint64 version = 1;
+
+    // Value 字段是一个字节数组，存储配置数据的值。
+    bytes value = 2;
+
+    // ModPolicy 字段是一个字符串，表示配置值的修改策略。
+    string mod_policy = 3;
+}
+
+// ConfigPolicy 表示配置策略。
+message ConfigPolicy {
+    // Version 表示配置策略的版本。
+    uint64 version = 1;
+
+    // Policy 是一个 Policy 类型的消息，表示配置策略的详细信息。
+    Policy policy = 2;
+
+    // ModPolicy 字段是一个字符串，表示配置策略的修改策略。
+    string mod_policy = 3;
+}
+
+// ConfigSignature 表示配置的签名信息。
+message ConfigSignature {
+    // SignatureHeader 是一个字节数组，存储对 SignatureHeader 结构的序列化字节数组。
+    bytes signature_header = 1;
+
+    // Signature 字段是一个字节数组，存储对 SignatureHeader 字节和配置字节的签名。
+    bytes signature = 2;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. configtx.proto

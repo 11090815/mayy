@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pgateway";
+
+package pgateway;
+
+import "ppeer/chaincode_event.proto";
+import "ppeer/proposal.proto";
+import "ppeer/transaction.proto";
+import "pcommon/common.proto";
+import "porderer/ab.proto";
+
+// Gateway 用于通过网关评估和提交交易的网关 API。交易评估(查询)需要调用 Evaluate 方法，事务提交(分类帐更新)是
+// 一个两步流程，先是调用 Endorse 方法，然后是 Submit 方法。如果客户端希望等待事务提交，则需要执行第三步，即调
+// 用 CommitStatus。提案和交易必须在每一步之前由客户签署。
+service Gateway {
+    // Endorse 方法将提议的交易传递给 Gateway 服务，以获得足够的背书。Gateway 将确定请求的链码的背书计划，
+    // 并将其转发给适当的对等节点进行背书。该方法将返回一个准备好的交易，以 Envelope 消息的形式返回给客户
+    // 端。客户端必须在调用 Submit 服务之前对此信封的内容进行签名。
+    rpc Endorse(EndorseRequest) returns (EndorseResponse);
+    // Submit 方法将处理从 Endorse 方法返回的准备好的交易，一旦客户端对其进行签名。它将等待交易提交到排序
+    // 服务，但客户端必须调用 CommitStatus 方法以等待交易的提交。
+    rpc Submit(SubmitRequest) returns (SubmitResponse);
+    // CommitStatus 方法将指示之前通过 Submit 服务提交的准备好的交易是否已经提交。如果尚未提交，则它将等
+    // 待提交的发生。
+    rpc CommitStatus(SignedCommitStatusRequest) returns (CommitStatusResponse);
+    // Evaluate 方法将提议的交易传递给 Gateway，以调用交易函数并将结果返回给客户端。不会进行账本更新。Gateway
+    // 将根据区块高度和负载选择适当的对等节点进行查询。
+    rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
+    // ChaincodeEvents 服务提供一个流式响应，每个响应包含特定区块中请求的链码发出的所有事件。流式响应按照升
+    // 序的区块编号排序。只有包含请求事件的区块才会返回响应，而不包含任何请求事件的区块将被跳过。
+    rpc ChaincodeEvents(SignedChaincodeEventsRequest) returns (stream ChaincodeEventsResponse);
+}
+
+message EndorseRequest {
+    // TransactionId 交易标识符。
+    string transaction_id = 1;
+    // ChannelId 该请求所属的通道的标识符。
+    string channel_id = 2;
+    // ProposedTransaction 已签名的待背书交易。
+    ppeer.SignedProposal proposed_transaction = 3;
+    // EndorsingOrganizations 如果针对特定组织的对等节点（例如用于私有数据场景），
+    // 则应该在此处提供组织的 id 列表。
+    repeated string endorsing_organizations = 4;
+}
+
+message EndorseResponse {
+    // PreparedTransaction 由背书节点生成的未签名的交易响应集合，需要由客户端签名后提交给排序服务。
+    pcommon.Envelope prepared_transaction = 1;
+}
+
+// SubmitRequest 结构体包含了需要被提交的交易的信息，此行为可能会对账本进行更新。
+message SubmitRequest {
+    // TransactionId 要提交的交易的标识符。
+    string transaction_id = 1;
+    // ChannelId 此请求消息所属的通道的标识符。
+    string channel_id = 2;
+    // PreparedTransaction 已经过背书签名并准备提交的交易响应集合。
+    pcommon.Envelope prepared_transaction = 3;
+}
+
+// SubmitResponse 结构体包含返回交易提交后的结果。
+message SubmitResponse {
+    pcommon.Status status = 1;
+}
+
+// SignedCommitStatusRequest 结构体包含一个经过序列化后的 CommitStatusRequest 消息请求，
+// 以及一个关于请求的签名。
+message SignedCommitStatusRequest {
+    // Request 序列化后的 CommitStatusRequest 消息请求。
+    bytes request = 1;
+    // Signature 关于请求的签名。
+    bytes signature = 2;
+}
+
+// CommitStatusRequest 结构体包含了想确认一个交易是否成功上链的请求消息。
+message CommitStatusRequest {
+    // TransactionId 想确认是否上链的交易的标识符。
+    string transaction_id = 1;
+    // ChannelId 此请求消息所属的通道的标识符。
+    string channel_id = 2;
+    // Identity 发出此请求的客户端的身份信息。
+    bytes identity = 3;
+}
+
+// CommitStatusResponse 结构体返回指定交易是否上链的结果信息。
+message CommitStatusResponse {
+    // Result 返回交易是否成功上链的结果。
+    ppeer.TxValidationCode result = 1;
+    // BlockNumber 返回包含指定交易的区块的区块号。
+    uint64 block_number = 2;
+}
+
+// EvaluateRequest 结构体包含了查询交易请求的详细信息。
+message EvaluateRequest {
+    // TransactionId 所需查询的交易的标识符。
+    string transaction_id = 1;
+    // ChannelId 此请求消息所属通道的标识符。
+    string channel_id = 2;
+    // ProposedTransaction 待查询的已签名的提案。
+    ppeer.SignedProposal proposed_transaction = 3;
+    // TargetOrganizations 如果针对特定组织的对等节点（例如用于私有数据场景），
+    // 则应该在此处提供组织的 id 列表。
+    repeated string target_organizations = 4;
+}
+
+// EvaluateResponse 返回查询交易的结果。
+message EvaluateResponse {
+    ppeer.Response result = 1;
+}
+
+// SignedChaincodeEventsRequest 结构体包含一个经过序列化后的 ChaincodeEventsRequest 请求消息，
+// 以及一个关于请求的签名。
+message SignedChaincodeEventsRequest {
+    // Request 经过序列化后的 ChaincodeEventsRequest 请求消息。
+    bytes request = 1;
+    // Signature 关于请求的签名。
+    bytes signature = 2;
+}
+
+// ChaincodeEventsRequest 包含调用者想要接收的链码时间的详细信息。
+message ChaincodeEventsRequest {
+    // ChannelId 此请求所属通道的标识符。
+    string channel_id = 1;
+    // ChaincodeId 要查询的事件所属的链码的标识符。
+    string chaincode_id = 2;
+    // Identity 表示客户都安的身份。
+    bytes identity = 3;
+    // StartPosition 在分类账中开始读取事件的位置。
+    porderer.SeekPosition start_position = 4;
+    // AfterTransactionId 仅返回此事务 ID 之后的事件。应该忽略包括此在内的事务。这用于允许从 StartPosition
+    // 指定的开始块中的某个位置恢复事件侦听。
+    string after_transaction_id = 5;
+}
+
+// ChaincodeEventsResponse 返回从特定区块发出的链码事件。
+message ChaincodeEventsResponse {
+    // Events 由请求的链码发出的链码事件。事件的呈现顺序与发出事件的事务在块中出现的顺序相同。
+    repeated ppeer.ChaincodeEvent events = 1;
+    // BlockNumber 发出链码事件的区块编号。
+    uint64 block_number = 2;
+}
+
+// ErrorDetail 如果 Gateway 服务中的任何函数返回一个错误，那么它将以 google.rpc.Status 消息的
+// 格式出现。如果错误是一个或多个对远程对等点或订购节点的失败请求的结果，则此消息的 “details” 字
+// 段将填充额外的信息。ErrorDetail 包含作为处理 Evaluate 或 Endorse 服务的结果，或作为处理 Submit
+// 服务的结果从排序节点接收到的错误的详细信息。
+message ErrorDetail {
+    // Address 返回错误的背书节点或排序节点的地址。
+    string address = 1;
+    // MspId 当前节点的 MSP 标识符。
+    string msp_id = 2;
+    // Message 节点返回的错误消息。
+    string message = 3;
+}
+
+// ProposedTransaction 用于在进行离线签名之前，提供评估或背书事务所需的详细信息。它包含了要签名的
+// 提案以及参与背书的组织列表。
+message ProposedTransaction {
+    // TransactionId 提出的交易的标识符。
+    string transaction_id = 1;
+    // Proposal 经过签名的提案。
+    ppeer.SignedProposal proposal = 2;
+    // EndorsingOrganizations 背书组织的列表。
+    repeated string endorsing_organizations = 3;
+}
+
+// PreparedTransaction 包含提交事务之前进行脱机签名所需的详细信息。
+message PreparedTransaction {
+    // TransactionId 已准备事务的标识符。
+    string transaction_id = 1;
+    // Envelope 信封内包含交易。
+    pcommon.Envelope envelope = 2;
+}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src --proto_path=$MAYY_HOME/protobuf --proto_path=$MAYY_HOME/protobuf/ppeer --go_out=plugins=grpc,paths=source_relative:. gateway.proto
+
+// 在运行上述命令生成 go 代码前，需要将 ppeer/transaction.proto 的第 7 行改成 import "ppeer/proposal.proto";，不然会报相关结构体和字段已经定义但未导入的错误。

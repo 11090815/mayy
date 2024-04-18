@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/porderer/psmartbft";
+
+package psmartbft;
+
+// Options 定义了共识过程的配置选项。
+message Options {
+    // RequestBatchMaxCount 指定了一个批次中请求的最大数量。
+    uint64 request_batch_max_count = 1;
+    // RequestBatchMaxBytes 指定了一个请求批次中的最大字节数。
+    uint64 request_batch_max_bytes = 2;
+    // RequestBatchMaxInterval 指定了请求批次的最大时间间隔。
+    string request_batch_max_interval = 3;
+    // IncomingMessageBufferSize 指定了传入消息缓冲区的大小。
+    uint64 incoming_message_buffer_size = 4;
+    // RequestPoolSize 指定了请求池的大小。
+    uint64 request_pool_size = 5;
+    // RequestForwardTimeout 指定了转发请求的超时时间。
+    string request_forward_timeout = 6;
+    // RequestComplainTimeout 指定了处理投诉的超时时间。
+    string request_complain_timeout = 7;
+    // RequestAutoRemoveTimeout 指定了自动移除请求的超时时间。
+    string request_auto_remove_timeout = 8;
+    // RequestMaxBytes 指定了一个请求的最大字节数。
+    uint64 request_max_bytes = 9;
+    // ViewChangeResendInterval 指定了重发更改视图请求的时间间隔。
+    string view_change_resend_interval = 10;
+    // ViewChangeTimeout 指定了更换视图的超时时间。
+    string view_change_timeout = 11;
+    // LeaderHeartbeatTimeout 指定了 leader 心跳的超时时间。
+    string leader_heartbeat_timeout = 12;
+    // LeaderHeartbeatCount 记录 leader 的心跳次数。
+    uint64 leader_heartbeat_count = 13;
+    // CollectTimeout 指定了收集响应的超时时间。
+    string collect_timeout = 14;
+    // SyncOnStart 指定是否在启动时同步。
+    bool sync_on_start = 15;
+    // SpeedUpViewChange 指定是否加快视图更换。
+    bool speed_up_view_change = 16;
+    // Rotation 定义了三种 leader 的轮换模式。
+    //  1. UNSPECIFIED：未指定轮换模式；
+    //  2. OFF：关闭轮换；
+    //  3. 开启轮换。
+    enum Rotation {
+        ROTATION_UNSPECIFIED = 0;
+        ROTATION_OFF = 1;
+        ROTATION_ON = 2;
+    }
+    // LeaderRotation 指定了 leader 的轮换模式，即确定何时以及如何进行领导者的轮换。
+    // 这对于确保系统的高可用性和安全性非常重要，因为领导者的轮换可以帮助分散风险，防
+    // 止单点故障，并提高系统的稳定性。
+    Rotation leader_rotation = 17;
+    // DecisionsPerLeader 指定了每个 leader 的决策数量。
+    uint64 decisions_per_leader = 18;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. configuration.proto

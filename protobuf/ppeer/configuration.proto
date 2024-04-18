@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+// AnchorPeers 用于存储多个锚节点的信息。
+message AnchorPeers {
+    repeated AnchorPeer anchor_peers = 1;
+}
+
+// AnchorPeer 结构体表示一个锚节点的详细信息，包括 host（锚节点的 DNS 主机名）和 port（端口号）。
+message AnchorPeer {
+    // Host 锚节点的 DNS 主机名。
+    string host = 1;
+    // Port 锚节点的端口号。
+    int32 port = 2;
+}
+
+// APIResource 表示一个 API 资源，其中包含一个 PolicyRef 字段，用于指定该 API 资源
+// 的访问控制策略的名称。
+message APIResource {
+    string policy_ref = 1;
+}
+
+// ACLs 结构体表示通道中资源的 ACL 映射，它包含一个 Acls 字段，是一个字符串到 APIResource
+// 的映射。这个映射可以用于指定每个资源对应的访问控制策略。
+message ACLs {
+    map<string,APIResource> acls = 1;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. configuration.proto

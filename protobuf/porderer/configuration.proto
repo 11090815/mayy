@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/porderer";
+
+package porderer;
+
+// ConsensusType 结构体用于定义共识类型和相关元数据。
+message ConsensusType {
+    string type = 1;
+    bytes metadata = 2;
+    enum State {
+        STATE_NORMAL = 0;
+        STATE_MAINTENANCE = 1;
+    }
+
+    State state = 3;
+}
+
+// BatchSize 结构体用于定义批处理的大小限制
+message BatchSize {
+    uint32 max_message_count = 1;
+    uint32 absolute_max_bytes = 2;
+    uint32 preferred_max_bytes = 3;
+}
+
+// BatchTimeout 结构体用于定义批处理的超时时间。
+message BatchTimeout {
+    // Timeout 字段可以接受任何可以被 ParseDuration() 函数解析的持续时间
+    // 字符串。这个字段用于指定批处理操作的超时时间，以确保在超时之前完成批
+    // 处理操作。
+    string timeout = 1;
+}
+
+// ChannelRestrictions 结构体用于传达有关排序者对通道创建的限制。
+message ChannelRestrictions {
+    // MaxCount 字段指定了所能创建的最大通道数量，如果值为 0，则表示没有限制。
+    // 这个字段用于定义排序者允许创建的通道数量的最大限制，以控制网络中通道的
+    // 数量。
+    uint64 max_count = 1;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. configuration.proto

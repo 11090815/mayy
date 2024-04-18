@@ -1,0 +1,253 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+import "github.com/google/protobuf/timestamp.proto";
+import "pcommon/policies.proto";
+import "chaincode.proto";
+
+/*
+获得一笔通用交易的批准流程如下所示：
+
+1. 客户端发送 proposal 给背书节点：
+    该 proposal 基本上是一个请求，要求采取某些行动对账本产生影响，proposal 包含
+    一个头部（头部包含一些元数据的描述，如类型、调用者的身份、事件、链的 ID、加密
+    随机数等）和一个不透明的负载，其内容取决于头部中指定的类型，proposal 包含以下
+    信息：
+        SignedProposal
+        |--Signature
+        |--Proposal
+           |--Header
+           |--Payload
+
+2. 背书节点发送 proposal 的响应给客户端：
+    proposal 的响应包含背书节点对客户端提案的回应。响应包括成功/错误代码、响应有效
+    载荷和对响应有效载荷的签名（也可称为背书）。响应有效载荷包含 proposal 的哈希值
+    （以安全地将此回应与相应的提案关联起来）和一个不透明扩展字段，该字段取决于相应
+    proposal 头部中指定的类型，提案响应包含以下信息：
+        ProposalResponse
+        |--Endorsement              背书者针对整个提案响应负载的签名
+        |--ProposalResponsePayload  提案响应的负载
+
+3. 客户端构建交易
+    一条交易信息将一个或多个提案和响应组合成一条消息，以发送给 排序者，在排序之后，
+    （批量）交易被传递给对等节点进行验证，并最终传递到账本中，每个交易包含一个或多
+    个操作，每个操作都包含一个标题（与请求它的提案相同）和一个根据标题中指定的类型
+    而不同的不透明有效载荷。
+        SignedTransaction
+        |--Signature                    在头部指定的创建者对交易信息进行签名
+        |--Transaction
+           |--TransactionAction (1...n)
+              |--Header                 请求此操作的 proposal 的头
+              |--Payload                此操作的负载
+*/
+
+// SignedProposal 这个结构对于签署包含头部和有效载荷的 proposal 而言是非常必要
+// 的，如果没有这个结构，则不得不连接头和有效载荷来验证签名，对于大型有效载荷来说
+// 可能会很昂贵。
+//
+// 当背书节点收到一个 SignedProposal 消息时，它应该验证其中的签名，这个验证需要执行
+// 以下步骤：
+//    1. 验证用于生成签名的证书的有效性，只要 ProposalBytes 被解码为一个 Proposal
+//      消息，并且 Proposal.Header 被解码为一个 Header 消息，则证书可用，虽然在验
+//      证之前进行解码可能不是理想的行为。
+//    2. 验证该证书是否受信任（由受信任 CA 签发）；
+//    3. 验证签名是否有效；
+//    4. 检测重放攻击。
+message SignedProposal {
+    // Signature 关于 ProposalBytes 的签名，该签名将使用客户端（即 SignedProposal
+    // 消息的创建者）的证书进行验证，证书被包含在 Proposal 的 Header 中，而 Proposal
+    // 被编码为 ProposalBytes 字节数组。
+    bytes signature = 1;
+
+    // ProposalBytes 将 Proposal 编码为字节数组得到的 ProposalBytes。
+    bytes proposal_bytes = 2;
+}
+
+// Proposal 被发送给背书节点以获得背书支持，一个 proposal 包含以下内容：
+//  1. Header：既是 proposal 的头部也是交易的头部，它用于计算哈希值和签名，Header 具有
+//      所有 proposal 和交易的共有字段，此外它还具有额外定制化的类型字段，其中一个例子是
+//      ChaincodeHeaderExtension 消息，用于扩展 CHAINCODE 类型的 Header。
+//  2. Payload：其类型取决于 Header 的 Type 字段。
+//  3. Extension：其类型取决于 Header 的 Type 字段。
+//
+// 下面给出一个例子：对于 CHAINCODE 类型，我们有以下内容：
+//  1. Header：是一个拥有 Extension 字段为 ChaincodeHeaderExtension 消息的 Header 消息。
+//  2. Payload：是 ChaincodeProposalPayload 消息。
+//  3. Extension：可能是 ChaincodeAction，可用来要求背书节点对特定 ChaincodeAction 进行背书。
+message Proposal {
+    // Header 是 Header 结构体序列化化后的字节数组表现形式。
+    bytes header = 1;
+    // Payload Header 字段中的 Type 字段可指定 Payload 存储的数据类型。 
+    bytes payload = 2;
+    // Extension 扩展字段存储的内容取决于 Header 字段中的 Type 字段，如果 Type 是 CHAINCODE，
+    // 则 Extension 可能是 ChaincodeAction 结构体的字节数组表现形式。
+    bytes extension = 3;
+}
+
+/*
+链码交易的批准流程如下所示：
+
+1. 客户端发送 proposal 给背书节点
+    该 proposal 基本上是要求在链码上执行某些操作，这将导致链码状态的一些变化，通常情况下，proposal 包含
+    一个 Header（其中包括一些元数据描述，例如类型、调用者身份、时间、链的 ID、加密随机数等）和一个 Payload（其中
+    包括链码 ID、调用参数等）。proposal 内还可能存在一些可选内容，包含请求背书人背书的操作，以模拟提交节点。
+    有关链码的 proposal 包含以下消息：
+        SignedProposal
+        |--Signature
+        |--Proposal
+           |--Header
+           |--ChaincodeProposalPayload
+           |--ChaincodeAction
+
+2. 背书节点发送 proposal 响应给客户端
+    proposal 响应中包含背书节点针对客户端提出的 proposal 的响应，具体包括成功/错误码、一个响应的有效载荷和
+    针对有效载荷的签名。响应载荷中包括 proposal 的哈希值、proposal 导致的行为结果和背书节点针对载荷的签名。
+    更正式的，一个关于链码 proposal 的响应包括以下信息：
+        ProposalResponse
+        |--Endorsement
+        |--ProposalResponsePayload
+           |--ChaincodeAction
+
+3. 客户端将背书节点的背书结果组装到一个交易中
+    一条交易消息将一个或多个提案和响应组合成一条消息，以发送给排序者。在排序之后，批量交易被传递给提交对等节点
+    进行验证，并最终传递到账本中。每个交易包含一个或多个操作，每个操作都包含一个头部（与请求此操作的提案相同），
+    一个提案有效载荷（与请求此操作的提案相同），对行为结果的描述以及每个认可该行为操作的背书节点签名。
+        SignedTransaction
+        |--Signature                                在头部指定的创建者对交易信息进行签名
+        |--Transaction
+           |--TransactionAction (1...n)
+              |--Header (1)                         请求此操作行为的提案的头部
+              |--ChaincodeActionPayload (1)
+                 |--ChaincodeProposalPayload (1)    请求此行为操作的提案的有效负载
+                 |--ChaincodeEndorsedAction (1)
+                    |--Endorsement (1...n)          背书节点针对整个响应负载的签名
+                    |--ProposalResponsePayload      
+                       |--ChaincodeAction           此提案提出的操作行为
+*/
+
+// ChaincodeHeaderExtension 是头部的扩展信息，当头部的类型是 CHAINCODE 时，此扩展将会被使用，用于确定
+// 哪个链码会被调用然后应该出现在账本中。
+message ChaincodeHeaderExtension {
+    ChaincodeID chaincode_id = 1;
+}
+
+// ChaincodeProposalPayload 是用于区块链提案的有效载荷信息，用于在 Header 类型为 CHAINCODE 时使用，它
+// 包含了此次调用所使用的参数。
+message ChaincodeProposalPayload {
+    // Input 包含此次调用的参数，如果此次调用新的链码，则 ESCC/VSCC 也包含在此字段中，通常情况下，它是一
+    // 个序列化的 ChaincodeInvocationSpec。
+    bytes input = 1;
+
+    // TransientMap 可能用于实现某种方式的应用级机密性的数据，此字段的内容应始终从交易中省略，并从账本中
+    // 排除。
+    map<string, bytes> TransientMap = 2;
+}
+
+// ChaincodeAction 包含了链码执行的结果、响应和事件。
+message ChaincodeAction {
+    // Results 包含由执行此次调用的链码产生的读集合写集，它是一个字节数组。
+    bytes results = 1;
+    // Events 包含由链码生成的事件，只包含一个序列化的 ChaincodeEvent。
+    bytes events = 2;
+    // Response 包含执行此次调用链码的结果，它是一个 Response 类型。
+    Response response = 3;
+    // ChaincodeId 包含执行此次调用的链码的 id，背书节点在模拟提案时会设置它为所调用的链码的 ChaincodeID。
+    // 提交者将验证其与最新链码版本匹配。通过添加 ChaincodeID，可以在一个交易中出现多个 ChaincodeAction 的
+    // 可能性。
+    ChaincodeID chaincode_id = 4;
+}
+
+// ProposalResponse 结构体表示背书节点对请求的响应，当客户端请求在链码上执行操作时，背书节点将返回
+// 此消息作为响应。响应包含了背书节点对请求的结果（成功或错误），以及对该操作的描述和背书节点的签名。
+// 如果足够数量的不同的背书节点就相同的操作达成一致并生成相应的签名，那么可以生成并发送一个交易进行
+// 排序。
+message ProposalResponse {
+    // Version 消息协议版本。
+    int32 version = 1;
+
+    // Timestamp 消息创建时的时间戳，由发送方定义。
+    google.protobuf.Timestamp timestamp = 2;
+
+    // Response 响应消息，指示操作的背书是否成功。
+    Response response = 3;
+
+    // Payload 响应的有效载荷，它是 ProposalResponsePayload 结构体序列化后的字节数组。
+    bytes payload = 4;
+
+    // Endorsement 背书节点对有效负载的签名。
+    Endorsement endorsement = 5;
+
+    // Interest 从模拟提案中得出的链码利益。
+    ChaincodeInterest interest = 6;
+}
+
+// Response 结构体用于表示一个类似于 HTTP 响应的响应消息。
+message Response {
+    // Status 表示响应状态，遵循 HTTP 状态码的规范。
+    int32 status = 1;
+
+    // Message 表示与响应代码相关的消息，可以用于提供关于响应的更多详细信息。
+    string message = 2;
+
+    // Payload 表示可以与此响应一起发送的元数据，可以用于传递任意类型的二进制数据。
+    bytes payload = 3;
+}
+
+// ProposalResponsePayload 结构体用于表示一个提案响应的有效载荷，它在客户端的请求和背书者对该请求的响
+// 应之间起到一个“桥梁”的作用，具体来说，对于链码，它包含了提案的哈希表示以及扩展字段中链码状态变化和事
+// 件的表示。
+message ProposalResponsePayload {
+    // PropoaslHash 表示触发此响应的提案的哈希值，哈希值用于在异步系统中将响应与其提案关联起来，通常哈
+    // 希会覆盖整个提案消息（逐字节）。
+    bytes proposal_hash = 1;
+
+    // Extension 应解析为某个特定类型的消息，在提案响应中，扩展字段的类型取决于客户端在最初发送提案时所
+    // 选择的提案类型。具体来说，这些信息存储在 Header 的 Type 中。对于链码，是一个 ChaincodeAction 消
+    // 息。
+    bytes extension = 2;
+}
+
+message Endorsement {
+    // Endorser 表示背书者的身份，例如其证书，用于标识背书者的身份信息。
+    bytes endorser = 1;
+
+    // Signature 表示提案响应中包含的有效载荷与背书者的证书连接在一起后的签名，即 sign(ProposalResponse.Payload + Endorser)，
+    // 它用于证明背书者对提案响应的认可。
+    bytes signature = 2;
+}
+
+// ChaincodeInterest 结构体用于定义对于特定单个链码调用的背书的兴趣，多个链码表示链码对链码的调用。
+message ChaincodeInterest {
+    // Chaincodes 表示对于一组链码调用的兴趣，每个 ChaincodeCall 表示一个链码调用的信息，它包括链码
+    // 名称、调用函数和传入的参数等。
+    repeated ChaincodeCall chaincodes = 1;
+}
+
+// ChaincodeCall 结构体用于定义对链码的调用，它包含与链码相关的集合。ChaincodeCall 结构体的目的是指定对链
+// 码的调用，并提供与调用相关的信息，如链码名称、集合名称、私有数据读取需求、命名空间写入需求以及背书策略等。
+// 这些信息用于确保在调用链码时满足相应的需求和策略。
+message ChaincodeCall {
+    // Name 表示要调用的链码的名称。
+    string name = 1;
+
+    // CollectionNames 表示与链码相关的集合的名称，集合是用于存储链码私有数据的特定数据集。
+    repeated string collection_names = 2;
+
+    // NoPrivateReads 指示我们需不需要从私有数据进行读取。如果为 true，则表示调用链码时不需要读取私有数据。
+    bool no_private_reads = 3;
+
+    // NoPublicWrites 指示我们需不需要向链码的命名空间进行写入。如果为 true，则不需要向链码的命名空间写入数据。
+    bool no_public_writes = 4;
+
+    // KeyPolicies 表示与写入集中具有基于状态的背书策略相关联的状态的签名策略集合。
+    repeated pcommon.SignaturePolicyEnvelope key_policies = 5;
+
+    // DisregardNamespacePolicy 指示我们希不希望忽略命名空间的背书策略。如果为 true，则表示希望在调用链码时
+    // 忽略命名空间的背书策略。
+    bool disregard_namespace_policy = 6;
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --proto_path=$GOPATH/src --go_out=,paths=source_relative:. proposal.proto

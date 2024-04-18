@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/ppeer";
+
+package ppeer;
+
+// ChaincodeQueryResponse 结构体内可以通过 Chaincodes 字段包含多个链码信息，每条链码信息是一个
+// ChaincodeInfo 结构体。例如返回对应查询方法 GetChaincodes 所要查询的所有链码信息，或者返回对应
+// 查询方法 GetInstalledChaincodes 所要查询的所有已被安装在某个 peer 处的所有链码信息。
+message ChaincodeQueryResponse {
+    // Chaincodes 字段是 ChaincodeInfo 类型的数组。
+    repeated ChaincodeInfo chaincodes = 1;
+}
+
+message ChaincodeInfo {
+    // Name 链码名。
+    string name = 1;
+
+    // Version 链码版本。
+    string version = 2;
+
+    // Path 安装/实例化链码的事务所指定的路径。
+    string path = 3;
+
+    // Input 字段指向实例化链码时输入的函数和参数，如果查询的是已安装的链码，则此字段被置为空。
+    string input = 4;
+
+    // Escc 链码的 Escc (Endorsing System Chaincode) 名称，如果查询的是已安装的链码，则此字段
+    // 被置为空。
+    string escc = 5;
+
+    // Vscc 链码的 Vscc (Validation System Chaincode) 名称，如果查询的是已安装的链码，则此字段
+    // 被置为空。
+    string vscc = 6;
+
+    // Id 是链码的唯一标识符，计算方式为：H(H(name || version H(CodePackage)))。
+    bytes id = 7;
+}
+
+// ChannelQueryResponse 返回所查询的通道信息，例如返回对应查询方法 GetChannels 所要查询的所有通道信息。
+message ChannelQueryResponse {
+    repeated ChannelInfo channels = 1;
+}
+
+// ChannelInfo 结构体仅包含通道的 Id 信息。
+message ChannelInfo {
+    string  channel_id = 1;
+}
+
+// JoinBySnapshotStatus 是一种用于在 Mayy 网络中加入新的对等节点的操作。当新的对等节点加入
+// 网络时，可以使用先前生成的快照（snapshot）来加快同步过程。JoinBySnapshotStatus 结构体提
+// 供了关于 JoinBySnapshot 操作的状态信息，以及正在使用的引导目录。这些信息对于监视和管理节
+// 点的加入过程非常有用。
+message JoinBySnapshotStatus {
+    // InProgress 一个布尔值，指示 JoinBySnapshot 操作是否正在进行中。如果正在进行中，则值
+    // 为 true；否则为 false。
+    bool in_progress = 1;
+    // BootstrappingSnapshotDir 一个字符串，表示正在运行 JoinBySnapshot 操作的引导目录。如
+    // 果 JoinBySnapshot 操作没有在运行，则该字段为空。
+    string bootstrapping_snapshot_dir = 2;
+}
+
+// protoc --proto_path=. --go_out=,paths=source_relative:. query.proto

@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/protobuf/pcommon";
+
+package pcommon;
+
+// HashingAlgorithm 用于表示配置哈希算法的配置消息，当前只支持 SHA256。
+message HashingAlgorithm {
+    // Name 目前支持的哈希函数名是 SHA256。
+    string name = 1;
+}
+
+// BlockDataHashingStructure 用于表示区块数据哈希结构的消息，它包含一个字段 width，用于
+// 指定计算区块哈希时所使用的 merkle 树的宽度。
+message BlockDataHashingStructure {
+    // Width 用于指定 merkle 树的宽度。
+    uint32 width = 1;
+}
+
+// OrdererAddresses 用于表示排序节点的地址消息，其内的 Addresses 字段用于存储多个排序节
+// 点的地址。
+message OrdererAddresses {
+    repeated string addresses = 1;
+}
+
+// Consenter 用于表示共识节点的消息，其内包含了共识节点的标识符和证书等字段。
+message Consenter {
+    uint32 id             = 1;
+    string host           = 2;
+    uint32 port           = 3;
+    string msp_id         = 4;
+    bytes identity        = 5;
+
+    // ClientTlsCert 字段表示共识节点作为客户端时所使用的 TLS 证书，该证书用于向其他共识
+    // 节点验证自身的身份，用于加密和解密通信内容。
+    bytes client_tls_cert = 6;
+
+    // ServerTlsCert 字段表示共识节点作为服务器端时所使用的 TLS 证书，该证书用于接收其他
+    // 共识节点的连接，用于加密和解密通信内容。
+    bytes server_tls_cert = 7;
+}
+
+// Orderers 用于表示排序节点的消息，它包含一个 ConsenterMapping 字段，用于存储多个共识节
+// 点的映射关系，映射关系是 Consenter Id => Consenter。
+message Orderers {
+    map<string,Consenter> consenter_mapping = 1;
+}
+
+// Consortium 用于表示通道创建时的联盟上下文的消息，其内的 Name 字段用于存储联盟的名字。
+message Consortium {
+    string name = 1;
+}
+
+// Capabilities 用于定义参与通道的各个二进制文件必须实现的能力（capabilities）。该消息在
+// 不同层级上定义，包括 /Channel 层级、/Channel/Application 层级和/Channel/Orderer 层
+// 级。每个层级的能力都有不同的影响范围和要求。该消息通过一个 Capabilities 字段，使用 map
+// 类型来存储不同能力的名称和对应的能力定义（Capability）。
+message Capabilities {
+    // Capabilities 消息的作用是定义了一系列的能力要求，用于确保网络中的所有节点和组件都满
+    // 足这些规定的能力要求。这些能力通常对应于发布的二进制版本（例如，“V1.1”），并且主要用
+    // 作完全升级的网络从一组逻辑切换到另一组逻辑的机制。
+    map<string,Capability> capabilities = 1;
+}
+
+// Capability 目前是一个空消息。它被定义为一个 protobuf 消息，而不是一个常量，因此如果将来
+// 有需要，我们可以扩展其他字段的功能。
+message Capability {}
+
+// protoc --proto_path=. --proto_path=$GOPATH/src/ --proto_path=$MAYY_HOME/protobuf --go_out=,paths=source_relative:. configuration.proto
