@@ -9,6 +9,7 @@ import (
 )
 
 type FactoryOpts struct {
+	// Kind 目前仅支持：sw，即通过软件实现的密码方案。
 	Kind          string `json:"kind" yaml:"Kind"`
 	KeyStorePath  string `json:"key_store_path" yaml:"KeyStorePath"`
 	SecurityLevel int    `json:"security_level" yaml:"SecurityLevel"`

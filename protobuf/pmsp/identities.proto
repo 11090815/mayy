@@ -6,8 +6,8 @@ package pmsp;
 
 // SerializedIdentity 表示一个 Identity 的序列化形式。
 message SerializedIdentity {
-    string Mspid    = 1; // Mspid 表示与该 Identity 先关联的 msp 服务提供商的标识符。
-    bytes id_bytes  = 2; // 表示 Identity 的序列化形式，按照其 msp 服务提供商的规则进行序列化。
+    string Mspid    = 1; // Mspid 表示与该 Identity 相关联的 msp 服务提供商的标识符。
+    bytes id_bytes  = 2; // IdBytes 节点的 x509 证书 PEM 编码格式字节数组。 
 }
 
 // protoc --proto_path=. --proto_path=$GOPATH/src/ --go_out=,paths=source_relative:. identities.proto

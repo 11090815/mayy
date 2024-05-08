@@ -26,8 +26,8 @@ type SerializedIdentity struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Mspid   string `protobuf:"bytes,1,opt,name=Mspid,proto3" json:"Mspid,omitempty"`                    // Mspid 表示与该 Identity 先关联的 msp 服务提供商的标识符。
-	IdBytes []byte `protobuf:"bytes,2,opt,name=id_bytes,json=idBytes,proto3" json:"id_bytes,omitempty"` // 表示 Identity 的序列化形式，按照其 msp 服务提供商的规则进行序列化。
+	Mspid   string `protobuf:"bytes,1,opt,name=Mspid,proto3" json:"Mspid,omitempty"`                    // Mspid 表示与该 Identity 相关联的 msp 服务提供商的标识符。
+	IdBytes []byte `protobuf:"bytes,2,opt,name=id_bytes,json=idBytes,proto3" json:"id_bytes,omitempty"` // IdBytes 节点的 x509 证书 PEM 编码格式字节数组。
 }
 
 func (x *SerializedIdentity) Reset() {
