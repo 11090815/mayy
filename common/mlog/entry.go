@@ -15,17 +15,26 @@ type entry struct {
 	module    string
 	msg       string
 	level     level
+	ctx       string
 }
 
 func (e *entry) ColorLevelString() string {
-	return fmt.Sprintf("%-20s | %-14s | %-16s | %s\n", e.timestamp, e.level.ColorString(), e.module, e.msg)
+	if e.ctx == "" {
+		return fmt.Sprintf("%-20s | %-14s | %s | %s\n", e.timestamp, e.level.ColorString(), e.module, e.msg)
+	} else {
+		return fmt.Sprintf("%-20s | %-14s | %s | %s | %s\n", e.timestamp, e.level.ColorString(), e.module, e.ctx, e.msg)
+	}
 }
 
 func (e *entry) NormalLevelString() string {
-	return fmt.Sprintf("%-20s | %-5s | %-16s | %s\n", e.timestamp, e.level.String(), e.module, e.msg)
+	if e.ctx == "" {
+		return fmt.Sprintf("%-20s | %-5s | %s | %s\n", e.timestamp, e.level.String(), e.module, e.msg)
+	} else {
+		return fmt.Sprintf("%-20s | %-5s | %s | %s | %s\n", e.timestamp, e.level.String(), e.module, e.ctx, e.msg)
+	}
 }
 
-func newEntry(timestamp string, module string, level level, msg string, printPath bool) *entry {
+func newEntry(timestamp string, module string, level level, msg string, ctx string, printPath bool) *entry {
 	if printPath {
 		pc, file, line, ok := runtime.Caller(2)
 		if !ok {
@@ -53,5 +62,6 @@ func newEntry(timestamp string, module string, level level, msg string, printPat
 		module:    module,
 		level:     level,
 		msg:       msg,
+		ctx:       ctx,
 	}
 }

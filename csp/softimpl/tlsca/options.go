@@ -7,6 +7,7 @@ const (
 )
 
 type TLSCAGenOpts struct {
+	// Level 目前支持 256 和 384 两个安全级别。
 	Level int
 }
 

@@ -9,7 +9,7 @@ import (
 
 func createRandomEntry() *entry {
 	r := rand.Intn(5)
-	return newEntry(now(), "consensus", level(r+1), "Successfully reach consensus among the whole network", true)
+	return newEntry(now(), "consensus", level(r+1), "Successfully reach consensus among the whole network", "ip=192.168.1.1", true)
 }
 
 func TestFileWriter(t *testing.T) {

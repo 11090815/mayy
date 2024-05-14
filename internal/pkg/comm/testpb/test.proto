@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "github.com/11090815/mayy/internal/pkg/comm/testpb";
+
+package testpb;
+
+message Empty {}
+
+message Echo {
+    bytes payload = 1;
+}
+
+service EmptyService {
+    rpc EmptyCall(Empty) returns(Empty);
+    rpc EmptyStream(stream Empty) returns(stream Empty);  
+}
+
+service EchoService {
+    rpc EchoCall(Echo) returns(Echo);
+}
+
+// protoc --proto_path=. --go_out=plugins=grpc,paths=source_relative:. test.proto

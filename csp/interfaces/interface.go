@@ -49,6 +49,9 @@ type CA interface {
 	// CertBytes 返回 CA 的证书的 PEM 格式编码的字节切片。
 	CertBytes() []byte
 
+	// KeyBytes 返回 CA 的密钥的 PEM 格式编码的字节切片。
+	KeyBytes() []byte
+
 	// NewIntermediateCA 创建一个中级 CA。
 	NewIntermediateCA() (CA, error)
 

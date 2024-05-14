@@ -8,7 +8,7 @@ import (
 )
 
 type ca struct {
-	keyPair interfaces.CertKeyPair
+	keyPair       interfaces.CertKeyPair
 	securityLevel int
 }
 
@@ -35,6 +35,10 @@ func (c *ca) NewIntermediateCA() (interfaces.CA, error) {
 
 func (c *ca) CertBytes() []byte {
 	return c.keyPair.Cert()
+}
+
+func (c *ca) KeyBytes() []byte {
+	return c.keyPair.Key()
 }
 
 func (c *ca) NewClientCertKeyPair() (interfaces.CertKeyPair, error) {

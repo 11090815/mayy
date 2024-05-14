@@ -39,11 +39,18 @@ func TestLog(t *testing.T) {
 
 func TestAsync(t *testing.T) {
 	l1 := mlog.GetLogger("peer1", mlog.DebugLevel, true)
+	l1.With("ip", "localhost")
 	l2 := mlog.GetLogger("chaincode", mlog.DebugLevel, true)
+	l2.With("ip", "127.0.0.1")
 	l3 := mlog.GetLogger("consenter", mlog.DebugLevel, true)
+	l3.With("grpc", "client")
 	l4 := mlog.GetLogger("org", mlog.DebugLevel, true)
+	l4.With("grpc", "server")
+	l4.With("result", "true")
+	l4.With("salary", "8000")
 	l5 := mlog.GetLogger("orderer", mlog.DebugLevel, true)
 	l6 := mlog.GetLogger("peer2", mlog.DebugLevel, true)
+	l6.With("name", "wushouxian")
 	wg := &sync.WaitGroup{}
 	wg.Add(6)
 

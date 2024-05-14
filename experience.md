@@ -12,6 +12,76 @@
 
 如果方法体内有对结构体字段进行修改的操作，那么无论类型的实例是不是指针，调用此方法都不会造成结构体字段发生实质性的改变。
 
+### 1.2 深拷贝与浅拷贝的区别
+
+浅拷贝（Shallow Clone）：将 src 浅拷贝给 dst，对 dst 进行改变的话，src 也会跟着改变。
+
+深拷贝（Deep Clone）：将 src 深拷贝给 dst，对 dst 进行改变的话，src 不会跟着改变。
+
+定义两个结构体：
+```go
+type Address struct {
+	Province string
+}
+
+type Student struct {
+	Name string
+	Home *Address
+}
+```
+
+浅拷贝的例子：
+```go
+func TestShallowClone(t *testing.T) {
+	stu1 := &Student{
+		Name: "tom",
+		Home: &Address{
+			Province: "安徽",
+		},
+	}
+	
+	stu2 := stu1
+
+	t.Logf("student1 {name: %s, home: %s}", stu1.Name, stu1.Home.Province) // output: student1 {name: tom, home: 安徽}
+	t.Logf("student2 {name: %s, home: %s}", stu2.Name, stu2.Home.Province) // output: student2 {name: tom, home: 安徽}
+	
+	stu2.Name = "alice"
+	stu2.Home.Province = "河南"
+
+	t.Logf("student1 {name: %s, home: %s}", stu1.Name, stu1.Home.Province) // output: student1 {name: alice, home: 河南}
+	t.Logf("student2 {name: %s, home: %s}", stu2.Name, stu2.Home.Province) // output: student2 {name: alice, home: 河南}
+}
+```
+
+深拷贝的例子：
+```go
+func TestDeepClone(t *testing.T) {
+	stu1 := &Student{
+		Name: "tom",
+		Home: &Address{
+			Province: "安徽",
+		},
+	}
+	
+	tmp := *stu1
+	tmpHome := *stu1.Home
+	tmp.Home = &tmpHome
+
+	stu2 := &tmp
+
+	t.Logf("student1 {name: %s, home: %s}", stu1.Name, stu1.Home.Province) // output: student1 {name: tom, home: 安徽}
+	t.Logf("student2 {name: %s, home: %s}", stu2.Name, stu2.Home.Province) // output: student2 {name: tom, home: 安徽}
+	
+	stu2.Name = "alice"
+	stu2.Home.Province = "河南"
+
+	t.Logf("student1 {name: %s, home: %s}", stu1.Name, stu1.Home.Province) // output: student1 {name: tom, home: 安徽}
+	t.Logf("student2 {name: %s, home: %s}", stu2.Name, stu2.Home.Province) // output: student2 {name: alice, home: 河南}
+}
+```
+
+关于 golang 拷贝的优质文章可参考：https://zhuanlan.zhihu.com/p/161210711。
+
 ## 2. 密码学方面的问题
 
 ### 2.1 ECDSA 签名的伪造问题
