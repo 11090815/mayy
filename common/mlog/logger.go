@@ -88,6 +88,10 @@ func GetLogger(module string, lvl level, printPath ...bool) Logger {
 		file:      loggerBus.file,
 		kvLoggers: make(map[string]*logger),
 		ctx:       make([]string, 0),
+		mutex:     &sync.RWMutex{},
+	}
+	if module == "test" {
+		l.file = &mockWriter{}
 	}
 	if len(printPath) > 0 {
 		l.printPath = printPath[0]
@@ -168,8 +172,9 @@ func (l *logger) Panicf(format string, args ...interface{}) {
 func (l *logger) With(key, value string) Logger {
 	kv := fmt.Sprintf("%s=%v", key, value)
 	l.mutex.RLock()
-	defer l.mutex.RUnlock()
-	if last, ok := l.kvLoggers[kv]; ok {
+	last, ok := l.kvLoggers[kv]
+	l.mutex.RUnlock()
+	if ok {
 		return last
 	}
 

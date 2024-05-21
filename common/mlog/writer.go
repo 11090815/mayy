@@ -246,3 +246,15 @@ func ReadConfig() (*fileWriterConfig, *viper.Viper, error) {
 
 	return opts, cfg, nil
 }
+
+/* ------------------------------------------------------------------------------------------ */
+
+type mockWriter struct {}
+
+func (mock *mockWriter) WriteEntry(*entry) error {
+	return nil
+}
+
+func (mock *mockWriter) Close() error {
+	return nil
+}

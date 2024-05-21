@@ -1,6 +1,8 @@
 package comm_test
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,15 +10,8 @@ import (
 
 	"github.com/11090815/mayy/csp/interfaces"
 	"github.com/11090815/mayy/csp/softimpl/tlsca"
+	"github.com/stretchr/testify/require"
 )
-
-type certificate struct {
-	isCA      bool
-	name      string
-	cert      []byte
-	key       []byte
-	secondary *certificate
-}
 
 func GenerateCertificatesForTest() {
 	generator := tlsca.NewTLSCAGenerator()
@@ -70,11 +65,11 @@ func GenerateCertificatesForTest() {
 	}
 
 	storeCA(rootCA1, "root1", "testdata")
-	storeCA(rootCA1, "root2", "testdata")
-	storeCA(rootCA1, "root1-sec1", "testdata")
-	storeCA(rootCA1, "root1-sec2", "testdata")
-	storeCA(rootCA1, "root2-sec1", "testdata")
-	storeCA(rootCA1, "root2-sec2", "testdata")
+	storeCA(rootCA2, "root2", "testdata")
+	storeCA(secondaryCA1_1, "root1-sec1", "testdata")
+	storeCA(secondaryCA1_2, "root1-sec2", "testdata")
+	storeCA(secondaryCA2_1, "root2-sec1", "testdata")
+	storeCA(secondaryCA2_2, "root2-sec2", "testdata")
 
 	generateClientAndServerCerts := func(ca interfaces.CA, name string, path string) error {
 		method := func(isServer bool) error {
@@ -139,4 +134,34 @@ func GenerateCertificatesForTest() {
 
 func TestGenerateCertificates(t *testing.T) {
 	GenerateCertificatesForTest()
+
+	var (
+		root1_sec1Cert []byte
+		// root1_sec1Key         []byte
+		root1_sec1_serverCert []byte
+		// root1_sec1_serverKey  []byte
+	)
+	root1_sec1_certFilePath := filepath.Join("testdata", "root1-sec1-cert.pem")
+	// root1_sec1_keyFilePath := filepath.Join("testdata", "root1-sec1-key.pem")
+	root1_sec1_server_certFilePath := filepath.Join("testdata", "root1-sec1-server-cert.pem")
+	// root1_sec1_server_keyFilePath := filepath.Join("testdata", "root1-sec1-server-key.pem")
+
+	root1_sec1Cert, _ = os.ReadFile(root1_sec1_certFilePath)
+	// root1_sec1Key, _ = os.ReadFile(root1_sec1_keyFilePath)
+	root1_sec1_serverCert, _ = os.ReadFile(root1_sec1_server_certFilePath)
+	// root1_sec1_serverKey, _ = os.ReadFile(root1_sec1_server_keyFilePath)
+
+	block1, _ := pem.Decode(root1_sec1Cert)
+	root1Sec1Cert, err := x509.ParseCertificate(block1.Bytes)
+	require.NoError(t, err)
+
+	block2, _ := pem.Decode(root1_sec1_serverCert)
+	root1Sec1ServerCert, err := x509.ParseCertificate(block2.Bytes)
+	require.NoError(t, err)
+
+	certPool := x509.NewCertPool()
+	certPool.AddCert(root1Sec1Cert)
+	chains, _ := root1Sec1ServerCert.Verify(x509.VerifyOptions{Roots: certPool})
+	require.NoError(t, err)
+	t.Logf("len [%d]", len(chains))
 }

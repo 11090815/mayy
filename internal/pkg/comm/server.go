@@ -34,7 +34,7 @@ type GRPCServer struct {
 	// healthServer 用于检查 grpc 服务的健康状态。
 	healthServer *health.Server
 }
- 
+
 func NewGRPCServer(address string, serverConfig ServerConfig) (*GRPCServer, error) {
 	if address == "" {
 		return nil, errors.NewError("missing address parameter")
@@ -62,6 +62,7 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 			// 确定向客户端出示服务端证书的方式，并设置验证客户端证书的方法
 			tlsCert, err := tls.X509KeyPair(serverConfig.SecOpts.Certificate, serverConfig.SecOpts.Key)
 			if err != nil {
+				listener.Close()
 				return nil, err
 			}
 			gServer.serverCertificate.Store(tlsCert)
@@ -98,16 +99,18 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 					for _, clientRootCA := range serverConfig.SecOpts.ClientRootCAs {
 						ok := gServer.config.config.ClientCAs.AppendCertsFromPEM(clientRootCA)
 						if !ok {
+							listener.Close()
 							return nil, errors.NewError("failed add client root CA certificate")
 						}
 					}
 				}
 			}
 
-			// 创建建立连接时握手凭证
+			// 创建建立连接时的握手凭证
 			creds := NewServerCredentials(gServer.config)
 			serverOptions = append(serverOptions, grpc.Creds(creds))
 		} else {
+			listener.Close()
 			return nil, errors.NewError("it must provide key and certificate for server when tls is enabled")
 		}
 	}
@@ -204,6 +207,10 @@ func (gServer *GRPCServer) Start() error {
 		gServer.healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	}
 	return gServer.server.Serve(gServer.listener)
+}
+
+func (gServer *GRPCServer) Stop() {
+	gServer.server.Stop()
 }
 
 /* ------------------------------------------------------------------------------------------ */

@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	tlsClientLogger = mlog.GetLogger("comm.client.tls", mlog.DebugLevel, true)
-	tlsServerLogger = mlog.GetLogger("comm.server.tls", mlog.DebugLevel, true)
+	tlsClientLogger = mlog.GetLogger("comm.tls.client", mlog.DebugLevel, true)
+	tlsServerLogger = mlog.GetLogger("comm.tls.server", mlog.DebugLevel, true)
+	tlsCredsLogger  = mlog.GetLogger("comm.tls.creds", mlog.DebugLevel)
 )
 
 type TLSConfig struct {
@@ -130,4 +131,67 @@ func (sc *ServerCredentials) Clone() credentials.TransportCredentials {
 
 func (sc *ServerCredentials) OverrideServerName(string) error {
 	return errors.NewError("Server does not support OverrideServerName")
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type CredentialSupport struct {
+	mutex             sync.RWMutex
+	appRootCAsByChain map[string][][]byte
+	serverRootCAs     [][]byte
+	clientCert        tls.Certificate
+}
+
+func NewCredentialSupport(rootCAs ...[]byte) *CredentialSupport {
+	return &CredentialSupport{
+		appRootCAsByChain: make(map[string][][]byte),
+		serverRootCAs:     rootCAs,
+	}
+}
+
+func (cs *CredentialSupport) SetClientCertificate(cert tls.Certificate) {
+	cs.mutex.Lock()
+	cs.clientCert = cert
+	cs.mutex.Unlock()
+}
+
+func (cs *CredentialSupport) GetClientCertificate() tls.Certificate {
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+	return cs.clientCert
+}
+
+func (cs *CredentialSupport) GetPeerCredentials() credentials.TransportCredentials {
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+
+	var appRootCAs [][]byte
+	appRootCAs = append(appRootCAs, cs.serverRootCAs...)
+	for _, appRootCA := range cs.appRootCAsByChain {
+		appRootCAs = append(appRootCAs, appRootCA...)
+	}
+
+	certPool := x509.NewCertPool()
+	for _, apptRootCA := range appRootCAs {
+		if !certPool.AppendCertsFromPEM(apptRootCA) {
+			tlsCredsLogger.Warnf("Failed adding certificate %x to peer's client TLS trust pool.", apptRootCA)
+		}
+	}
+
+	return credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{cs.clientCert},
+		RootCAs:      certPool,
+	})
+}
+
+func (cs *CredentialSupport) AppRootCAsByChain() [][]byte {
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+
+	var appRootCAs [][]byte
+	for _, appRootCAsByChain := range cs.appRootCAsByChain {
+		appRootCAs = append(appRootCAs, appRootCAsByChain...)
+	}
+
+	return appRootCAs
 }
