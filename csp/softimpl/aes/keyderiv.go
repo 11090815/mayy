@@ -3,7 +3,7 @@ package aes
 import (
 	"crypto/hmac"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/config"
 	"github.com/11090815/mayy/errors"
 )
@@ -18,7 +18,7 @@ func NewAESKeyDeriver(c *config.Config) *AESKeyDeriver {
 	return &AESKeyDeriver{config: c}
 }
 
-func (kd *AESKeyDeriver) KeyDeriv(key interfaces.Key, opts interfaces.KeyDerivOpts) (interfaces.Key, error) {
+func (kd *AESKeyDeriver) KeyDeriv(key csp.Key, opts csp.KeyDerivOpts) (csp.Key, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid opts parameter, nil opts parameter")
 	}

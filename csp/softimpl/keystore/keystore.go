@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/aes"
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
 	"github.com/11090815/mayy/csp/softimpl/utils"
@@ -55,7 +55,7 @@ func (ks *fileBasedKeyStore) ReadOnly() bool {
 	return ks.readOnly
 }
 
-func (ks *fileBasedKeyStore) GetKey(ski []byte) (interfaces.Key, error) {
+func (ks *fileBasedKeyStore) GetKey(ski []byte) (csp.Key, error) {
 	if len(ski) == 0 {
 		return nil, errors.NewError("invalid subject key identifier, nil subject key identifier")
 	}
@@ -92,7 +92,7 @@ func (ks *fileBasedKeyStore) GetKey(ski []byte) (interfaces.Key, error) {
 	}
 }
 
-func (ks *fileBasedKeyStore) StoreKey(k interfaces.Key) error {
+func (ks *fileBasedKeyStore) StoreKey(k csp.Key) error {
 	if ks.readOnly {
 		return errors.NewError("the read-only key store cannot be overwritten")
 	}

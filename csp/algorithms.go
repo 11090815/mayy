@@ -1,4 +1,4 @@
-package interfaces
+package csp
 
 import "hash"
 
@@ -46,5 +46,5 @@ type Hasher interface {
 /* ------------------------------------------------------------------------------------------ */
 
 type CAGenerator interface {
-	CAGen(opts CAGenOpts) (CA, error)
+	GenCA(opts CAGenOpts) (CA, error)
 }

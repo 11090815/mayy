@@ -3,12 +3,12 @@ package tlsca
 import (
 	"crypto"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
 type ca struct {
-	keyPair       interfaces.CertKeyPair
+	keyPair       csp.CertKeyPair
 	securityLevel int
 }
 
@@ -22,7 +22,7 @@ func newCA(level int) (*ca, error) {
 	return c, nil
 }
 
-func (c *ca) NewIntermediateCA() (interfaces.CA, error) {
+func (c *ca) NewIntermediateCA() (csp.CA, error) {
 	intermediateCA := &ca{securityLevel: c.securityLevel}
 	var err error
 	intermediateCA.keyPair, err = newCertKeyPair(c.securityLevel, true, false, c.keyPair.Signer(), c.keyPair.X509Cert())
@@ -41,11 +41,11 @@ func (c *ca) KeyBytes() []byte {
 	return c.keyPair.Key()
 }
 
-func (c *ca) NewClientCertKeyPair() (interfaces.CertKeyPair, error) {
+func (c *ca) NewClientCertKeyPair() (csp.CertKeyPair, error) {
 	return newCertKeyPair(c.securityLevel, false, false, c.keyPair.Signer(), c.keyPair.X509Cert())
 }
 
-func (c *ca) NewServerCertKeyPair(hosts ...string) (interfaces.CertKeyPair, error) {
+func (c *ca) NewServerCertKeyPair(hosts ...string) (csp.CertKeyPair, error) {
 	return newCertKeyPair(c.securityLevel, false, true, c.keyPair.Signer(), c.keyPair.X509Cert(), hosts...)
 }
 

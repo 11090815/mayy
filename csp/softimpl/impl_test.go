@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/mocks"
 	"github.com/11090815/mayy/csp/softimpl"
 	"github.com/11090815/mayy/csp/softimpl/aes"
@@ -182,7 +182,7 @@ func TestTLSCA(t *testing.T) {
 
 	// 构建客户端，传入的参数为客户端的证书密钥对，基于客户端的证书和CA的证书，
 	// 尝试构建与server之间的连接
-	probeTLS := func(kp interfaces.CertKeyPair) error {
+	probeTLS := func(kp csp.CertKeyPair) error {
 		tlsCfg := &tls.Config{
 			RootCAs:      x509.NewCertPool(),
 			Certificates: []tls.Certificate{kp.TLSCert()}, // 提供客户端的证书给 server 去验证客户端的身份
@@ -211,7 +211,7 @@ func TestTLSCA(t *testing.T) {
 	require.Error(t, probeTLS(otherClientKP))
 }
 
-func createTLSService(t *testing.T, ca interfaces.CA, host string) *grpc.Server {
+func createTLSService(t *testing.T, ca csp.CA, host string) *grpc.Server {
 	kp, err := ca.NewServerCertKeyPair(host)
 	require.NoError(t, err)
 

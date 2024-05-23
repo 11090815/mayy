@@ -5,7 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/utils"
 	"github.com/11090815/mayy/errors"
 )
@@ -19,7 +19,7 @@ func NewAESCBCPKCS7Encrypter() *AESCBCPKCS7Encrypter {
 }
 
 // Encrypt 此方法的第三个参数 EncrypterOpts 要么是 *AESCBCPKCS7ModeOpts，要么是 AESCBCPKCS7ModeOpts。
-func (encrypter *AESCBCPKCS7Encrypter) Encrypt(key interfaces.Key, plaintext []byte, opts interfaces.EncrypterOpts) ([]byte, error) {
+func (encrypter *AESCBCPKCS7Encrypter) Encrypt(key csp.Key, plaintext []byte, opts csp.EncrypterOpts) ([]byte, error) {
 	switch o := opts.(type) {
 	case *AESCBCPKCS7ModeOpts:
 		if len(o.IV) != 0 {
@@ -43,7 +43,7 @@ func NewAESCBCPKCS7Decrypter() *AESCBCPKCS7Decrypter {
 }
 
 // Decrypt 此方法的第三个参数 DecrypterOpts 可以是 nil。
-func (decrypter *AESCBCPKCS7Decrypter) Decrypt(key interfaces.Key, ciphertext []byte, opts interfaces.DecrypterOpts) ([]byte, error) {
+func (decrypter *AESCBCPKCS7Decrypter) Decrypt(key csp.Key, ciphertext []byte, opts csp.DecrypterOpts) ([]byte, error) {
 	return decrypt(key.(*AESKey).key, ciphertext)
 }
 

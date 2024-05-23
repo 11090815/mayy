@@ -5,3 +5,6 @@
 2024-05-21 15:15:18.558 | debug | comm.server.tls | remote_address=127.0.0.1:40990 | mayy/internal/pkg/comm/creds.go_ServerHandshake:118 => Server TLS handshake completed in 3.65195ms.
 2024-05-21 15:16:19.528 | debug | comm.server.tls | remote_address=127.0.0.1:42296 | mayy/internal/pkg/comm/creds.go_ServerHandshake:118 => Server TLS handshake completed in 1.796244ms.
 2024-05-21 15:16:19.532 | debug | comm.server.tls | remote_address=127.0.0.1:42298 | mayy/internal/pkg/comm/creds.go_ServerHandshake:118 => Server TLS handshake completed in 2.147651ms.
+2024-05-23 19:45:25.121 | debug | comm.tls.server | remote_address=127.0.0.1:40048 | mayy/internal/pkg/comm/creds.go_ServerHandshake:119 => Server TLS handshake completed in 2.883091ms.
+2024-05-23 19:45:25.132 | debug | comm.tls.server | remote_address=127.0.0.1:40064 | mayy/internal/pkg/comm/creds.go_ServerHandshake:119 => Server TLS handshake completed in 4.849798ms.
+2024-05-23 19:45:30.475 | debug | comm.tls.server | remote_address=127.0.0.1:41256 | mayy/internal/pkg/comm/creds.go_ServerHandshake:119 => Server TLS handshake completed in 13.520634ms.

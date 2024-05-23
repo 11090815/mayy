@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -59,7 +59,7 @@ func TestTLSCA(t *testing.T) {
 	defer srv.Stop()
 	defer listener.Close()
 
-	probeTLS := func(kp interfaces.CertKeyPair) error {
+	probeTLS := func(kp csp.CertKeyPair) error {
 		tlsCfg := &tls.Config{
 			RootCAs:      x509.NewCertPool(),
 			Certificates: []tls.Certificate{kp.TLSCert()},

@@ -1,7 +1,7 @@
 package aes
 
 import (
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
@@ -14,7 +14,7 @@ func NewAESKeyImporter() *AESKeyImporter {
 }
 
 // KeyImport 此方法的第二个参数 KeyImportOpts 可以是 nil。
-func (importer *AESKeyImporter) KeyImport(raw interface{}, opts interfaces.KeyImportOpts) (interfaces.Key, error) {
+func (importer *AESKeyImporter) KeyImport(raw interface{}, opts csp.KeyImportOpts) (csp.Key, error) {
 	aesRaw, ok := raw.([]byte)
 	if !ok {
 		return nil, errors.NewErrorf("invalid raw material, expected bytes, but got \"%T\"", raw)

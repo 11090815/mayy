@@ -5,7 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
@@ -20,7 +20,7 @@ func NewECDSAKeyGenerator(curve elliptic.Curve) *ECDSAKeyGenerator {
 }
 
 // KeyGen 方法不需要传入 KeyGenOpts 参数。
-func (kg *ECDSAKeyGenerator) KeyGen(opts interfaces.KeyGenOpts) (interfaces.Key, error) {
+func (kg *ECDSAKeyGenerator) KeyGen(opts csp.KeyGenOpts) (csp.Key, error) {
 	privateKey, err := ecdsa.GenerateKey(kg.curve, rand.Reader)
 	if err != nil {
 		return nil, errors.NewErrorf("failed generating ECDSA key, the error is \"%s\"", err.Error())

@@ -6,7 +6,7 @@ import (
 	"crypto/sha512"
 	"reflect"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl"
 	"github.com/11090815/mayy/csp/softimpl/aes"
 	"github.com/11090815/mayy/csp/softimpl/config"
@@ -17,27 +17,31 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
+var (
+	defaultFactory *CSPFactory
+)
+
 type CSPFactory struct {
 	opts *FactoryOpts
 }
 
-func NewCSPFactoryWithOpts(opts *FactoryOpts) *CSPFactory {
-	return &CSPFactory{opts: opts}
+func InitCSPFactoryWithOpts(opts *FactoryOpts) {
+	defaultFactory = &CSPFactory{opts: opts}
 }
 
-func (factory *CSPFactory) CreateFactory() (interfaces.CSP, error) {
-	if factory.opts == nil {
+func CreateCSP() (csp.CSP, error) {
+	if defaultFactory.opts == nil {
 		return nil, errors.NewError("invalid options, nil options")
 	}
-	switch factory.opts.Kind {
+	switch defaultFactory.opts.Kind {
 	case "sw", "SW", "Sw", "sW":
-		return createSoftBasedCSP(factory.opts)
+		return createSoftBasedCSP(defaultFactory.opts)
 	default:
-		return nil, errors.NewErrorf("unknown crypto service provider mode \"%s\"", factory.opts.Kind)
+		return nil, errors.NewErrorf("unknown crypto service provider mode \"%s\"", defaultFactory.opts.Kind)
 	}
 }
 
-func createSoftBasedCSP(opts *FactoryOpts) (interfaces.CSP, error) {
+func createSoftBasedCSP(opts *FactoryOpts) (csp.CSP, error) {
 	ks, err := keystore.NewFileBasedKeyStore(opts.KeyStorePath, opts.ReadOnly)
 	if err != nil {
 		return nil, errors.NewErrorf("cannot create crypto service provider based on soft ware, the error is \"%s\"", err.Error())

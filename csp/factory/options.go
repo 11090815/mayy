@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/11090815/mayy/config"
+	"github.com/11090815/mayy/core/config"
 	"github.com/11090815/mayy/errors"
 )
 

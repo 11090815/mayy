@@ -1,7 +1,7 @@
 package hash
 
 import (
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
@@ -16,7 +16,7 @@ const (
 
 /* ------------------------------------------------------------------------------------------ */
 
-func GetHashOpt(hashFunc string) (interfaces.HashOpts, error) {
+func GetHashOpt(hashFunc string) (csp.HashOpts, error) {
 	switch hashFunc {
 	case SHA256:
 		return &SHA256Opts{}, nil

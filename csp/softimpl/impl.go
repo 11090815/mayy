@@ -4,48 +4,48 @@ import (
 	"hash"
 	"reflect"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
 /* ------------------------------------------------------------------------------------------ */
 
 type SoftCSPImpl struct {
-	keyStore interfaces.KeyStore
+	keyStore csp.KeyStore
 
-	KeyGenerators map[reflect.Type]interfaces.KeyGenerator
-	KeyDerivers   map[reflect.Type]interfaces.KeyDeriver
-	KeyImporters  map[reflect.Type]interfaces.KeyImporter
-	Encrypters    map[reflect.Type]interfaces.Encrypter
-	Decrypters    map[reflect.Type]interfaces.Decrypter
-	Signers       map[reflect.Type]interfaces.Signer
-	Verifiers     map[reflect.Type]interfaces.Verifier
-	Hashers       map[reflect.Type]interfaces.Hasher
-	CAGenerators  map[reflect.Type]interfaces.CAGenerator
+	KeyGenerators map[reflect.Type]csp.KeyGenerator
+	KeyDerivers   map[reflect.Type]csp.KeyDeriver
+	KeyImporters  map[reflect.Type]csp.KeyImporter
+	Encrypters    map[reflect.Type]csp.Encrypter
+	Decrypters    map[reflect.Type]csp.Decrypter
+	Signers       map[reflect.Type]csp.Signer
+	Verifiers     map[reflect.Type]csp.Verifier
+	Hashers       map[reflect.Type]csp.Hasher
+	CAGenerators  map[reflect.Type]csp.CAGenerator
 }
 
-func NewSoftCSPImpl(ks interfaces.KeyStore) (interfaces.CSP, error) {
+func NewSoftCSPImpl(ks csp.KeyStore) (csp.CSP, error) {
 	if ks == nil {
 		return nil, errors.NewError("invalid key store, nil key store")
 	}
 
 	impl := &SoftCSPImpl{
 		keyStore:      ks,
-		KeyGenerators: make(map[reflect.Type]interfaces.KeyGenerator),
-		KeyDerivers:   make(map[reflect.Type]interfaces.KeyDeriver),
-		KeyImporters:  make(map[reflect.Type]interfaces.KeyImporter),
-		Encrypters:    make(map[reflect.Type]interfaces.Encrypter),
-		Decrypters:    make(map[reflect.Type]interfaces.Decrypter),
-		Signers:       make(map[reflect.Type]interfaces.Signer),
-		Verifiers:     make(map[reflect.Type]interfaces.Verifier),
-		Hashers:       make(map[reflect.Type]interfaces.Hasher),
-		CAGenerators:  make(map[reflect.Type]interfaces.CAGenerator),
+		KeyGenerators: make(map[reflect.Type]csp.KeyGenerator),
+		KeyDerivers:   make(map[reflect.Type]csp.KeyDeriver),
+		KeyImporters:  make(map[reflect.Type]csp.KeyImporter),
+		Encrypters:    make(map[reflect.Type]csp.Encrypter),
+		Decrypters:    make(map[reflect.Type]csp.Decrypter),
+		Signers:       make(map[reflect.Type]csp.Signer),
+		Verifiers:     make(map[reflect.Type]csp.Verifier),
+		Hashers:       make(map[reflect.Type]csp.Hasher),
+		CAGenerators:  make(map[reflect.Type]csp.CAGenerator),
 	}
 
 	return impl, nil
 }
 
-func (csp *SoftCSPImpl) KeyGen(opts interfaces.KeyGenOpts) (interfaces.Key, error) {
+func (csp *SoftCSPImpl) KeyGen(opts csp.KeyGenOpts) (csp.Key, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid option, nil option")
 	}
@@ -67,7 +67,7 @@ func (csp *SoftCSPImpl) KeyGen(opts interfaces.KeyGenOpts) (interfaces.Key, erro
 	return key, nil
 }
 
-func (csp *SoftCSPImpl) KeyDeriv(key interfaces.Key, opts interfaces.KeyDerivOpts) (interfaces.Key, error) {
+func (csp *SoftCSPImpl) KeyDeriv(key csp.Key, opts csp.KeyDerivOpts) (csp.Key, error) {
 	if key == nil {
 		return nil, errors.NewError("invalid key, nil key")
 	}
@@ -93,7 +93,7 @@ func (csp *SoftCSPImpl) KeyDeriv(key interfaces.Key, opts interfaces.KeyDerivOpt
 	return dk, nil
 }
 
-func (csp *SoftCSPImpl) KeyImport(raw interface{}, opts interfaces.KeyImportOpts) (interfaces.Key, error) {
+func (csp *SoftCSPImpl) KeyImport(raw interface{}, opts csp.KeyImportOpts) (csp.Key, error) {
 	if raw == nil {
 		return nil, errors.NewError("invalid raw material, nil raw material")
 	}
@@ -118,11 +118,11 @@ func (csp *SoftCSPImpl) KeyImport(raw interface{}, opts interfaces.KeyImportOpts
 	return key, nil
 }
 
-func (csp *SoftCSPImpl) GetKey(ski []byte) (interfaces.Key, error) {
+func (csp *SoftCSPImpl) GetKey(ski []byte) (csp.Key, error) {
 	return csp.keyStore.GetKey(ski)
 }
 
-func (csp *SoftCSPImpl) Hash(msg []byte, opts interfaces.HashOpts) ([]byte, error) {
+func (csp *SoftCSPImpl) Hash(msg []byte, opts csp.HashOpts) ([]byte, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid option, nil option")
 	}
@@ -140,7 +140,7 @@ func (csp *SoftCSPImpl) Hash(msg []byte, opts interfaces.HashOpts) ([]byte, erro
 	return digest, nil
 }
 
-func (csp *SoftCSPImpl) GetHash(opts interfaces.HashOpts) (hash.Hash, error) {
+func (csp *SoftCSPImpl) GetHash(opts csp.HashOpts) (hash.Hash, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid option, nil option")
 	}
@@ -158,7 +158,7 @@ func (csp *SoftCSPImpl) GetHash(opts interfaces.HashOpts) (hash.Hash, error) {
 	return hf, nil
 }
 
-func (csp *SoftCSPImpl) Sign(key interfaces.Key, digest []byte, opts interfaces.SignerOpts) ([]byte, error) {
+func (csp *SoftCSPImpl) Sign(key csp.Key, digest []byte, opts csp.SignerOpts) ([]byte, error) {
 	if key == nil {
 		return nil, errors.NewErrorf("invalid key, nil key")
 	}
@@ -175,7 +175,7 @@ func (csp *SoftCSPImpl) Sign(key interfaces.Key, digest []byte, opts interfaces.
 	return signer.Sign(key, digest, opts)
 }
 
-func (csp *SoftCSPImpl) Verify(key interfaces.Key, sig, digest []byte, opts interfaces.SignerOpts) (bool, error) {
+func (csp *SoftCSPImpl) Verify(key csp.Key, sig, digest []byte, opts csp.SignerOpts) (bool, error) {
 	if key == nil {
 		return false, errors.NewErrorf("invalid key, nil key")
 	}
@@ -196,7 +196,7 @@ func (csp *SoftCSPImpl) Verify(key interfaces.Key, sig, digest []byte, opts inte
 	return verifier.Verify(key, sig, digest, opts)
 }
 
-func (csp *SoftCSPImpl) Encrypt(key interfaces.Key, plaintext []byte, opts interfaces.EncrypterOpts) ([]byte, error) {
+func (csp *SoftCSPImpl) Encrypt(key csp.Key, plaintext []byte, opts csp.EncrypterOpts) ([]byte, error) {
 	if key == nil {
 		return nil, errors.NewErrorf("invalid key, nil key")
 	}
@@ -209,7 +209,7 @@ func (csp *SoftCSPImpl) Encrypt(key interfaces.Key, plaintext []byte, opts inter
 	return encrypter.Encrypt(key, plaintext, opts)
 }
 
-func (csp *SoftCSPImpl) Decrypt(key interfaces.Key, ciphertext []byte, opts interfaces.DecrypterOpts) ([]byte, error) {
+func (csp *SoftCSPImpl) Decrypt(key csp.Key, ciphertext []byte, opts csp.DecrypterOpts) ([]byte, error) {
 	if key == nil {
 		return nil, errors.NewErrorf("invalid key, nil key")
 	}
@@ -222,7 +222,7 @@ func (csp *SoftCSPImpl) Decrypt(key interfaces.Key, ciphertext []byte, opts inte
 	return decrypter.Decrypt(key, ciphertext, opts)
 }
 
-func (csp *SoftCSPImpl) CAGen(opts interfaces.CAGenOpts) (interfaces.CA, error) {
+func (csp *SoftCSPImpl) CAGen(opts csp.CAGenOpts) (csp.CA, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid opts, nil opts")
 	}
@@ -232,10 +232,10 @@ func (csp *SoftCSPImpl) CAGen(opts interfaces.CAGenOpts) (interfaces.CA, error) 
 		return nil, errors.NewErrorf("cannot find out the CA generator for the opts of type \"%T\"", opts)
 
 	}
-	return cg.CAGen(opts)
+	return cg.GenCA(opts)
 }
 
-func RegisterWidget(csp *SoftCSPImpl, t reflect.Type, w interface{}) error {
+func RegisterWidget(scsp *SoftCSPImpl, t reflect.Type, w interface{}) error {
 	if t == nil {
 		return errors.NewError("invalid type, nil type")
 	}
@@ -245,24 +245,24 @@ func RegisterWidget(csp *SoftCSPImpl, t reflect.Type, w interface{}) error {
 	}
 
 	switch ww := w.(type) {
-	case interfaces.KeyGenerator:
-		csp.KeyGenerators[t] = ww
-	case interfaces.KeyImporter:
-		csp.KeyImporters[t] = ww
-	case interfaces.KeyDeriver:
-		csp.KeyDerivers[t] = ww
-	case interfaces.Signer:
-		csp.Signers[t] = ww
-	case interfaces.Verifier:
-		csp.Verifiers[t] = ww
-	case interfaces.Encrypter:
-		csp.Encrypters[t] = ww
-	case interfaces.Decrypter:
-		csp.Decrypters[t] = ww
-	case interfaces.Hasher:
-		csp.Hashers[t] = ww
-	case interfaces.CAGenerator:
-		csp.CAGenerators[t] = ww
+	case csp.KeyGenerator:
+		scsp.KeyGenerators[t] = ww
+	case csp.KeyImporter:
+		scsp.KeyImporters[t] = ww
+	case csp.KeyDeriver:
+		scsp.KeyDerivers[t] = ww
+	case csp.Signer:
+		scsp.Signers[t] = ww
+	case csp.Verifier:
+		scsp.Verifiers[t] = ww
+	case csp.Encrypter:
+		scsp.Encrypters[t] = ww
+	case csp.Decrypter:
+		scsp.Decrypters[t] = ww
+	case csp.Hasher:
+		scsp.Hashers[t] = ww
+	case csp.CAGenerator:
+		scsp.CAGenerators[t] = ww
 	default:
 		return errors.NewErrorf("widget type \"%T\" is not recognized", w)
 	}

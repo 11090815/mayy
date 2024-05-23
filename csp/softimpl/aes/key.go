@@ -3,7 +3,7 @@ package aes
 import (
 	"crypto/sha256"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/utils"
 	"github.com/11090815/mayy/errors"
 )
@@ -13,7 +13,7 @@ type AESKey struct {
 	exportable bool
 }
 
-func NewAESKey(key []byte) interfaces.Key {
+func NewAESKey(key []byte) csp.Key {
 	return &AESKey{key: key}
 }
 
@@ -44,6 +44,6 @@ func (key *AESKey) Private() bool {
 	return true
 }
 
-func (key *AESKey) PublicKey() (interfaces.Key, error) {
+func (key *AESKey) PublicKey() (csp.Key, error) {
 	return nil, errors.NewError("AES doesn't have public key")
 }

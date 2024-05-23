@@ -1,7 +1,7 @@
 package tlsca
 
 import (
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
@@ -11,7 +11,7 @@ func NewTLSCAGenerator() *TLSCAGenerator {
 	return &TLSCAGenerator{}
 }
 
-func (cg *TLSCAGenerator) CAGen(opts interfaces.CAGenOpts) (interfaces.CA, error) {
+func (cg *TLSCAGenerator) GenCA(opts csp.CAGenOpts) (csp.CA, error) {
 	if opts == nil {
 		return nil, errors.NewError("failed generating tls CA, nil opts")
 	}

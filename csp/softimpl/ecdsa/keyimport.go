@@ -5,7 +5,7 @@ import (
 	"crypto/x509"
 	"reflect"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl"
 	"github.com/11090815/mayy/csp/softimpl/utils"
 	"github.com/11090815/mayy/errors"
@@ -20,7 +20,7 @@ func NewECDSAPKIXPublicKeyImporter() *ECDSAPKIXPublicKeyImporter {
 }
 
 // KeyImport 次方的第一个参数必须是 ECDSA 公钥的 PKIX, ASN.1 DER 格式，第二个参数 KeyImportOpts 可以是 nil。
-func (*ECDSAPKIXPublicKeyImporter) KeyImport(raw interface{}, opts interfaces.KeyImportOpts) (interfaces.Key, error) {
+func (*ECDSAPKIXPublicKeyImporter) KeyImport(raw interface{}, opts csp.KeyImportOpts) (csp.Key, error) {
 	der, ok := raw.([]byte)
 	if !ok {
 		return nil, errors.NewErrorf("invalid raw material, expected bytes, but got \"%T\"", raw)
@@ -47,7 +47,7 @@ func NewECDSAGoPublicKeyImporter() *ECDSAGoPublicKeyImporter {
 }
 
 // KeyImport 此方法的第一个参数必须是 *ecdsa.PublicKey，第二个参数 KeyImportOpts 可以是 nil。
-func (*ECDSAGoPublicKeyImporter) KeyImport(raw interface{}, opts interfaces.KeyImportOpts) (interfaces.Key, error) {
+func (*ECDSAGoPublicKeyImporter) KeyImport(raw interface{}, opts csp.KeyImportOpts) (csp.Key, error) {
 	lowLevelKey, ok := raw.(*ecdsa.PublicKey)
 	if !ok {
 		return nil, errors.NewErrorf("expected *ecdsa.PublicKey, but got \"%s\", ", raw)
@@ -67,7 +67,7 @@ func NewECDSAX509PublicKeyImporter(csp *softimpl.SoftCSPImpl) *ECDSAX509PublicKe
 }
 
 // KeyImport 此方法的第一个参数必须是 *x509.Certificate，第二个参数 KeyImportOpts 可以是 nil。
-func (importer *ECDSAX509PublicKeyImporter) KeyImport(raw interface{}, opts interfaces.KeyImportOpts) (interfaces.Key, error) {
+func (importer *ECDSAX509PublicKeyImporter) KeyImport(raw interface{}, opts csp.KeyImportOpts) (csp.Key, error) {
 	x509Cert, ok := raw.(*x509.Certificate)
 	if !ok {
 		return nil, errors.NewErrorf("invalid raw material, expected *x509.Certificate, wanted \"%T\"", raw)
@@ -92,7 +92,7 @@ func NewECDSAPrivateKeyImporter() *ECDSAPrivateKeyImporter {
 }
 
 // KeyImport 此方法的第一个参数必须是 ECDSA 私钥的 SEC 1, ASN.1 DER 格式，第二个参数 KeyImportOpts 可以是 nil。
-func (*ECDSAPrivateKeyImporter) KeyImport(raw interface{}, opts interfaces.KeyImportOpts) (interfaces.Key, error) {
+func (*ECDSAPrivateKeyImporter) KeyImport(raw interface{}, opts csp.KeyImportOpts) (csp.Key, error) {
 	der, ok := raw.([]byte)
 	if !ok {
 		return nil, errors.NewErrorf("invalid raw material, expected bytes, but got \"%T\"", raw)

@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/utils"
 	"github.com/11090815/mayy/errors"
 )
@@ -21,7 +21,7 @@ func ECDSAPrivateKeyToPEM(key *ECDSAPrivateKey) ([]byte, error) {
 	return utils.PrivateKeyToPEM(key.privateKey)
 }
 
-func NewECDSAPrivateKey(sk *ecdsa.PrivateKey) interfaces.Key {
+func NewECDSAPrivateKey(sk *ecdsa.PrivateKey) csp.Key {
 	return &ECDSAPrivateKey{privateKey: sk}
 }
 
@@ -49,7 +49,7 @@ func (key *ECDSAPrivateKey) Private() bool {
 	return true
 }
 
-func (key *ECDSAPrivateKey) PublicKey() (publicKey interfaces.Key, err error) {
+func (key *ECDSAPrivateKey) PublicKey() (publicKey csp.Key, err error) {
 	return &ECDSAPublicKey{publicKey: &key.privateKey.PublicKey}, nil
 }
 
@@ -63,7 +63,7 @@ func ECDSAPublicKeyToPEM(key *ECDSAPublicKey) ([]byte, error) {
 	return utils.PublicKeyToPEM(key.publicKey)
 }
 
-func NewECDSAPublicKey(pk *ecdsa.PublicKey) interfaces.Key {
+func NewECDSAPublicKey(pk *ecdsa.PublicKey) csp.Key {
 	return &ECDSAPublicKey{publicKey: pk}
 }
 
@@ -96,6 +96,6 @@ func (key *ECDSAPublicKey) Private() bool {
 	return false
 }
 
-func (key *ECDSAPublicKey) PublicKey() (publicKey interfaces.Key, err error) {
+func (key *ECDSAPublicKey) PublicKey() (publicKey csp.Key, err error) {
 	return key, nil
 }

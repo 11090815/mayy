@@ -13,9 +13,9 @@ func TestCreatCSP(t *testing.T) {
 	opts, err := factory.ReadConfig()
 	require.NoError(t, err)
 
-	factory := factory.NewCSPFactoryWithOpts(opts)
+	factory.InitCSPFactoryWithOpts(opts)
 
-	csp, err := factory.CreateFactory()
+	csp, err := factory.CreateCSP()
 	require.NoError(t, err)
 
 	ecdsaSK256, err := csp.KeyGen(&ecdsa.ECDSAP256KeyGenOpts{Temporary: false})

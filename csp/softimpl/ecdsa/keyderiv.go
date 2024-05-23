@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/errors"
 )
 
@@ -17,7 +17,7 @@ func NewECDSAPublicKeyDeriver() *ECDSAPublicKeyDeriver {
 }
 
 // KeyDeriv 此方法的第二个参数必须是 *ECDSAReRandKeyOpts 实例。
-func (kd *ECDSAPublicKeyDeriver) KeyDeriv(key interfaces.Key, opts interfaces.KeyDerivOpts) (interfaces.Key, error) {
+func (kd *ECDSAPublicKeyDeriver) KeyDeriv(key csp.Key, opts csp.KeyDerivOpts) (csp.Key, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid opts, it must be non-nil")
 	}
@@ -67,7 +67,7 @@ func NewECDSAPrivateKeyDeriver() *ECDSAPrivateKeyDeriver {
 }
 
 // KeyDeriv 此方法的第二个参数必须是 *ECDSAReRandKeyOpts 实例。
-func (kd *ECDSAPrivateKeyDeriver) KeyDeriv(key interfaces.Key, opts interfaces.KeyDerivOpts) (interfaces.Key, error) {
+func (kd *ECDSAPrivateKeyDeriver) KeyDeriv(key csp.Key, opts csp.KeyDerivOpts) (csp.Key, error) {
 	if opts == nil {
 		return nil, errors.NewError("invalid opts, it must be non-nil")
 	}

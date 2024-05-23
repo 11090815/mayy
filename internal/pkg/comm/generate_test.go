@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/11090815/mayy/csp/interfaces"
+	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/tlsca"
 	"github.com/stretchr/testify/require"
 )
@@ -16,11 +16,11 @@ import (
 func GenerateCertificatesForTest() {
 	generator := tlsca.NewTLSCAGenerator()
 
-	rootCA1, err := generator.CAGen(&tlsca.TLSCAGenOpts{Level: 384})
+	rootCA1, err := generator.GenCA(&tlsca.TLSCAGenOpts{Level: 384})
 	if err != nil {
 		panic(err)
 	}
-	rootCA2, err := generator.CAGen(&tlsca.TLSCAGenOpts{Level: 384})
+	rootCA2, err := generator.GenCA(&tlsca.TLSCAGenOpts{Level: 384})
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +43,7 @@ func GenerateCertificatesForTest() {
 		panic(err)
 	}
 
-	storeCA := func(ca interfaces.CA, name, path string) error {
+	storeCA := func(ca csp.CA, name, path string) error {
 		filename := filepath.Join(path, fmt.Sprintf("%s-cert.pem", name))
 		file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(0666))
 		if err != nil {
@@ -71,9 +71,9 @@ func GenerateCertificatesForTest() {
 	storeCA(secondaryCA2_1, "root2-sec1", "testdata")
 	storeCA(secondaryCA2_2, "root2-sec2", "testdata")
 
-	generateClientAndServerCerts := func(ca interfaces.CA, name string, path string) error {
+	generateClientAndServerCerts := func(ca csp.CA, name string, path string) error {
 		method := func(isServer bool) error {
-			var keyPair interfaces.CertKeyPair
+			var keyPair csp.CertKeyPair
 			var kind string
 			if isServer {
 				kind = "server"
