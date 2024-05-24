@@ -27,4 +27,4 @@ type identity struct {
 	validationErr error
 }
 
-func newIdentity()
+// func newIdentity()
