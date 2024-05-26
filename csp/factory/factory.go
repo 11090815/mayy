@@ -23,19 +23,31 @@ var (
 
 type CSPFactory struct {
 	opts *FactoryOpts
+	csps map[string]csp.CSP
 }
 
 func InitCSPFactoryWithOpts(opts *FactoryOpts) {
-	defaultFactory = &CSPFactory{opts: opts}
+	defaultFactory = &CSPFactory{
+		opts: opts,
+		csps: make(map[string]csp.CSP),
+	}
 }
 
-func CreateCSP() (csp.CSP, error) {
+func GetCSP() (csp.CSP, error) {
 	if defaultFactory.opts == nil {
-		return nil, errors.NewError("invalid options, nil options")
+		return nil, errors.NewError("you should initialize the csp factory before calling this method")
 	}
 	switch defaultFactory.opts.Kind {
 	case "sw", "SW", "Sw", "sW":
-		return createSoftBasedCSP(defaultFactory.opts)
+		if csp, ok := defaultFactory.csps["sw"]; ok {
+			return csp, nil
+		}
+		csp, err := createSoftBasedCSP(defaultFactory.opts)
+		if err != nil {
+			return nil, err
+		}
+		defaultFactory.csps["sw"] = csp
+		return defaultFactory.csps["sw"], nil
 	default:
 		return nil, errors.NewErrorf("unknown crypto service provider mode \"%s\"", defaultFactory.opts.Kind)
 	}

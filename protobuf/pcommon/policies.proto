@@ -4,7 +4,7 @@ option go_package = "github.com/11090815/mayy/protobuf/pcommon";
 
 package pcommon;
 
-import "pmsp/msp_principal.proto";
+import "pmsp/msp_principle.proto";
 
 // Policy 包含一个策略类型和策略值，策略类型可以是签名策略、MSP 成员服务提供者
 // 策略或隐式元策略。
@@ -21,11 +21,11 @@ message Policy {
 }
 
 // SignaturePolicyEnvelop 签名策略封装消息，包含一个版本号和一个签名策略，。此外，
-// 该消息还包含多个 MSPPrincipal（成员服务提供者主体）。
+// 该消息还包含多个 MSPPrinciple（成员服务提供者主体）。
 message SignaturePolicyEnvelope {
     int32 version                         = 1;
     SignaturePolicy rule                  = 2;
-    repeated pmsp.MSPPrincipal identities = 3;
+    repeated pmsp.MSPPrinciple identities = 3;
 }
 
 // SignaturePolicy 签名策略消息，是一个递归的消息结构，用于定义一个轻量级的 DSL

@@ -24,7 +24,7 @@ type MSP interface {
 	// GetType 目前只会返回 "csp"。
 	GetType() ProviderType
 
-	GetIdentifier() (string, error)
+	GetIdentifier() string
 
 	GetDefaultSigningIdentity() (SigningIdentity, error)
 
@@ -37,8 +37,8 @@ type MSP interface {
 	// Validate 验证给定的身份是否合法。
 	Validate(id Identity) error
 
-	// SatisfiesPrincipal 检查给定的身份实例是否与给定的 MSPPrincipal 中提供的描述匹配。
-	SatisfiesPrincipal(id Identity, principal *pmsp.MSPPrincipal) error
+	// SatisfiesPrinciple 检查给定的身份实例是否与给定的 MSPPrinciple 中提供的描述匹配。
+	SatisfiesPrinciple(id Identity, principal *pmsp.MSPPrinciple) error
 }
 
 type IdentityDeserializer interface {
@@ -73,8 +73,8 @@ type Identity interface {
 	// Serialize 将身份信息序列化成字节数组。
 	Serialize() ([]byte, error)
 
-	// SatisfiesPrincipal 检查此身份实例是否与 MSPPrincipal 中提供的描述匹配。
-	SatisfiesPrincipal(principal *pmsp.MSPPrincipal) error
+	// SatisfiesPrinciple 检查此身份实例是否与 MSPPrinciple 中提供的描述匹配。
+	SatisfiesPrinciple(principal *pmsp.MSPPrinciple) error
 }
 
 type SigningIdentity interface {

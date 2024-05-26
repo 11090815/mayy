@@ -16,6 +16,7 @@ const (
 
 /* ------------------------------------------------------------------------------------------ */
 
+// GetHashOpt 目前支持的哈希函数：SHA256、SHA384、SHA3_256、SHA3_384。
 func GetHashOpt(hashFunc string) (csp.HashOpts, error) {
 	switch hashFunc {
 	case SHA256:

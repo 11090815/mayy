@@ -4,9 +4,6 @@ type MSPVersion int
 
 const (
 	MSPv1_0 MSPVersion = iota
-	MSPv1_1
-	MSPv1_3
-	MSPv1_4_3
 )
 
 /* ------------------------------------------------------------------------------------------ */
@@ -31,7 +28,7 @@ func ProviderTypeToString(id ProviderType) string {
 }
 
 var Options = map[string]NewOpts{
-	ProviderTypeToString(MAYY): &CSPNewOpts{Version: MSPv1_4_3},
+	ProviderTypeToString(MAYY): &CSPNewOpts{Version: MSPv1_0},
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -44,7 +41,8 @@ type IdentityIdentifier struct {
 
 // OUIdentifier 组织单元的身份标识符。
 type OUIdentifier struct {
-	// CertifiersIdentifier 证书的标识符（哈希值）。
+	// CertifiersIdentifier 一连串证书链的标识符（哈希值），由同一个机构签发的不同证书，
+	// 所计算出来的 CertifiersIdentifier 是一样的。
 	CertifiersIdentifier []byte
 	// OrganizationalUnitIdentifier 组织单元标识符。
 	OrganizationalUnitIdentifier string

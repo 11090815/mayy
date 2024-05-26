@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.26.0
 // 	protoc        v4.24.4
-// source: msp_principal.proto
+// source: msp_principle.proto
 
 package pmsp
 
@@ -20,26 +20,26 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type MSPPrincipal_Classification int32
+type MSPPrinciple_Classification int32
 
 const (
-	MSPPrincipal_ROLE              MSPPrincipal_Classification = 0 // ROLE 表示 MSP 网络中的成员角色或者管理员角色。
-	MSPPrincipal_ORGANIZATION_UNIT MSPPrincipal_Classification = 1 // ORGANIZATION_UNIT 表示基于身份所属的组织单位在 MSP 中的分类。
-	MSPPrincipal_IDENTITY          MSPPrincipal_Classification = 2 // IDENTITY 表示由单个身份/证书组成的主体。
-	MSPPrincipal_ANONYMITY         MSPPrincipal_Classification = 3 // ANONYMITY 表示可以强制使身份匿名或具名的主体。
-	MSPPrincipal_COMBINED          MSPPrincipal_Classification = 4 // COMBINED 表示组合的主体。
+	MSPPrinciple_ROLE              MSPPrinciple_Classification = 0 // ROLE 表示 MSP 网络中的成员角色或者管理员角色。
+	MSPPrinciple_ORGANIZATION_UNIT MSPPrinciple_Classification = 1 // ORGANIZATION_UNIT 表示基于身份所属的组织单位在 MSP 中的分类。
+	MSPPrinciple_IDENTITY          MSPPrinciple_Classification = 2 // IDENTITY 表示由单个身份/证书组成的主体。
+	MSPPrinciple_ANONYMITY         MSPPrinciple_Classification = 3 // ANONYMITY 表示可以强制使身份匿名或具名的主体。
+	MSPPrinciple_COMBINED          MSPPrinciple_Classification = 4 // COMBINED 表示组合的主体。
 )
 
-// Enum value maps for MSPPrincipal_Classification.
+// Enum value maps for MSPPrinciple_Classification.
 var (
-	MSPPrincipal_Classification_name = map[int32]string{
+	MSPPrinciple_Classification_name = map[int32]string{
 		0: "ROLE",
 		1: "ORGANIZATION_UNIT",
 		2: "IDENTITY",
 		3: "ANONYMITY",
 		4: "COMBINED",
 	}
-	MSPPrincipal_Classification_value = map[string]int32{
+	MSPPrinciple_Classification_value = map[string]int32{
 		"ROLE":              0,
 		"ORGANIZATION_UNIT": 1,
 		"IDENTITY":          2,
@@ -48,31 +48,31 @@ var (
 	}
 )
 
-func (x MSPPrincipal_Classification) Enum() *MSPPrincipal_Classification {
-	p := new(MSPPrincipal_Classification)
+func (x MSPPrinciple_Classification) Enum() *MSPPrinciple_Classification {
+	p := new(MSPPrinciple_Classification)
 	*p = x
 	return p
 }
 
-func (x MSPPrincipal_Classification) String() string {
+func (x MSPPrinciple_Classification) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (MSPPrincipal_Classification) Descriptor() protoreflect.EnumDescriptor {
-	return file_msp_principal_proto_enumTypes[0].Descriptor()
+func (MSPPrinciple_Classification) Descriptor() protoreflect.EnumDescriptor {
+	return file_msp_principle_proto_enumTypes[0].Descriptor()
 }
 
-func (MSPPrincipal_Classification) Type() protoreflect.EnumType {
-	return &file_msp_principal_proto_enumTypes[0]
+func (MSPPrinciple_Classification) Type() protoreflect.EnumType {
+	return &file_msp_principle_proto_enumTypes[0]
 }
 
-func (x MSPPrincipal_Classification) Number() protoreflect.EnumNumber {
+func (x MSPPrinciple_Classification) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use MSPPrincipal_Classification.Descriptor instead.
-func (MSPPrincipal_Classification) EnumDescriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{0, 0}
+// Deprecated: Use MSPPrinciple_Classification.Descriptor instead.
+func (MSPPrinciple_Classification) EnumDescriptor() ([]byte, []int) {
+	return file_msp_principle_proto_rawDescGZIP(), []int{0, 0}
 }
 
 type MSPRole_MSPRoleType int32
@@ -114,11 +114,11 @@ func (x MSPRole_MSPRoleType) String() string {
 }
 
 func (MSPRole_MSPRoleType) Descriptor() protoreflect.EnumDescriptor {
-	return file_msp_principal_proto_enumTypes[1].Descriptor()
+	return file_msp_principle_proto_enumTypes[1].Descriptor()
 }
 
 func (MSPRole_MSPRoleType) Type() protoreflect.EnumType {
-	return &file_msp_principal_proto_enumTypes[1]
+	return &file_msp_principle_proto_enumTypes[1]
 }
 
 func (x MSPRole_MSPRoleType) Number() protoreflect.EnumNumber {
@@ -127,7 +127,7 @@ func (x MSPRole_MSPRoleType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MSPRole_MSPRoleType.Descriptor instead.
 func (MSPRole_MSPRoleType) EnumDescriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{2, 0}
+	return file_msp_principle_proto_rawDescGZIP(), []int{2, 0}
 }
 
 type MSPIdentityAnonymity_MSPIdentityAnonymityType int32
@@ -160,11 +160,11 @@ func (x MSPIdentityAnonymity_MSPIdentityAnonymityType) String() string {
 }
 
 func (MSPIdentityAnonymity_MSPIdentityAnonymityType) Descriptor() protoreflect.EnumDescriptor {
-	return file_msp_principal_proto_enumTypes[2].Descriptor()
+	return file_msp_principle_proto_enumTypes[2].Descriptor()
 }
 
 func (MSPIdentityAnonymity_MSPIdentityAnonymityType) Type() protoreflect.EnumType {
-	return &file_msp_principal_proto_enumTypes[2]
+	return &file_msp_principle_proto_enumTypes[2]
 }
 
 func (x MSPIdentityAnonymity_MSPIdentityAnonymityType) Number() protoreflect.EnumNumber {
@@ -173,10 +173,10 @@ func (x MSPIdentityAnonymity_MSPIdentityAnonymityType) Number() protoreflect.Enu
 
 // Deprecated: Use MSPIdentityAnonymity_MSPIdentityAnonymityType.Descriptor instead.
 func (MSPIdentityAnonymity_MSPIdentityAnonymityType) EnumDescriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{3, 0}
+	return file_msp_principle_proto_rawDescGZIP(), []int{3, 0}
 }
 
-// MSPPrincipal 旨在表示以 MSP 为中心的一组身份，具体而言，该结构允许定义以下内容：
+// MSPPrinciple 旨在表示以 MSP 为中心的一组身份，具体而言，该结构允许定义以下内容：
 //  1. 一组属于同一 MSP 的身份。
 //  2. 一组属于同一 MSP 中同一组织单位的身份。
 //  3. 一组管理特定 MSP 的身份。
@@ -186,40 +186,40 @@ func (MSPIdentityAnonymity_MSPIdentityAnonymityType) EnumDescriptor() ([]byte, [
 //   - Classification：定义 MSP 中身份的分类类型，Classification 可以有三个值：
 //     1. ByMSPRole：表示基于预定义的 MSP 规则之一 (admin 和 member) 对 MSP 内的身份进行分类。
 //     2. ByOrganizationUnit：表示基于身份所属的组织单位对 MSP 内的身份进行分类。
-//     3. ByIdentity：表示 MSPPrincipal 映射到单个身份/证书，这意味着 Principal 字段是身份的字节信息。
-type MSPPrincipal struct {
+//     3. ByIdentity：表示 MSPPrinciple 映射到单个身份/证书，这意味着 Principle 字段是身份的字节信息。
+type MSPPrinciple struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// PrincipalClassification 表示如何处理 Principal 的分类方式，分类方式包括：
-	//  1. ByOrganizationUnit：表示 Principal 中包含 MSP 处理的组织的名称。
-	//  2. ByIdentity：表示 Principal 中包含特定身份。
-	//  3. 默认值：表示 Principal 包含默认由所有 MSP 支持的组中的一个，admin 或者 member。
-	PrincipalClassification MSPPrincipal_Classification `protobuf:"varint,1,opt,name=principal_classification,json=principalClassification,proto3,enum=pmsp.MSPPrincipal_Classification" json:"principal_classification,omitempty"`
-	// Principal 表示完成策略主体定义的 Principal，对于默认的主体类型，Principal 可以是 admin 或者是
-	// member；对于 ByOrganizationUnit / ByIdentity 分类类型，PolicyPrincipal 从组织单位或者身份中
-	// 获取其值；对于 Combined 分类类型，Principal 是一个序列化的 CombinedPrincipal。
-	Principal []byte `protobuf:"bytes,2,opt,name=principal,proto3" json:"principal,omitempty"`
+	// PrincipleClassification 表示如何处理 Principle 的分类方式，分类方式包括：
+	//  1. ByOrganizationUnit：表示 Principle 中包含 MSP 处理的组织的名称。
+	//  2. ByIdentity：表示 Principle 中包含特定身份。
+	//  3. 默认值：表示 Principle 包含默认由所有 MSP 支持的组中的一个，admin 或者 member。
+	PrincipleClassification MSPPrinciple_Classification `protobuf:"varint,1,opt,name=principle_classification,json=principleClassification,proto3,enum=pmsp.MSPPrinciple_Classification" json:"principle_classification,omitempty"`
+	// Principle 表示完成策略主体定义的 Principle，对于默认的主体类型，Principle 可以是 admin 或者是
+	// member；对于 ByOrganizationUnit / ByIdentity 分类类型，PolicyPrinciple 从组织单位或者身份中
+	// 获取其值；对于 Combined 分类类型，Principle 是一个序列化的 CombinedPrinciple。
+	Principle []byte `protobuf:"bytes,2,opt,name=principle,proto3" json:"principle,omitempty"`
 }
 
-func (x *MSPPrincipal) Reset() {
-	*x = MSPPrincipal{}
+func (x *MSPPrinciple) Reset() {
+	*x = MSPPrinciple{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_msp_principal_proto_msgTypes[0]
+		mi := &file_msp_principle_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *MSPPrincipal) String() string {
+func (x *MSPPrinciple) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MSPPrincipal) ProtoMessage() {}
+func (*MSPPrinciple) ProtoMessage() {}
 
-func (x *MSPPrincipal) ProtoReflect() protoreflect.Message {
-	mi := &file_msp_principal_proto_msgTypes[0]
+func (x *MSPPrinciple) ProtoReflect() protoreflect.Message {
+	mi := &file_msp_principle_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -230,26 +230,26 @@ func (x *MSPPrincipal) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MSPPrincipal.ProtoReflect.Descriptor instead.
-func (*MSPPrincipal) Descriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use MSPPrinciple.ProtoReflect.Descriptor instead.
+func (*MSPPrinciple) Descriptor() ([]byte, []int) {
+	return file_msp_principle_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *MSPPrincipal) GetPrincipalClassification() MSPPrincipal_Classification {
+func (x *MSPPrinciple) GetPrincipleClassification() MSPPrinciple_Classification {
 	if x != nil {
-		return x.PrincipalClassification
+		return x.PrincipleClassification
 	}
-	return MSPPrincipal_ROLE
+	return MSPPrinciple_ROLE
 }
 
-func (x *MSPPrincipal) GetPrincipal() []byte {
+func (x *MSPPrinciple) GetPrinciple() []byte {
 	if x != nil {
-		return x.Principal
+		return x.Principle
 	}
 	return nil
 }
 
-// OrganizationUnit 用于管理策略主体的 Principal 字段中特定组织单位成员的组织。
+// OrganizationUnit 用于管理策略主体的 Principle 字段中特定组织单位成员的组织。
 type OrganizationUnit struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -263,7 +263,7 @@ type OrganizationUnit struct {
 func (x *OrganizationUnit) Reset() {
 	*x = OrganizationUnit{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_msp_principal_proto_msgTypes[1]
+		mi := &file_msp_principle_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -276,7 +276,7 @@ func (x *OrganizationUnit) String() string {
 func (*OrganizationUnit) ProtoMessage() {}
 
 func (x *OrganizationUnit) ProtoReflect() protoreflect.Message {
-	mi := &file_msp_principal_proto_msgTypes[1]
+	mi := &file_msp_principle_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -289,7 +289,7 @@ func (x *OrganizationUnit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrganizationUnit.ProtoReflect.Descriptor instead.
 func (*OrganizationUnit) Descriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{1}
+	return file_msp_principle_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *OrganizationUnit) GetMspIdentifier() string {
@@ -313,7 +313,7 @@ func (x *OrganizationUnit) GetCertifiersIdentifier() []byte {
 	return nil
 }
 
-// MSPRole 用于在 MSPPrincipal 的 Principal 字段中定义 MSP 中的两个专用角色之一 (admin 和 member) 的组织。
+// MSPRole 用于在 MSPPrinciple 的 Principle 字段中定义 MSP 中的两个专用角色之一 (admin 和 member) 的组织。
 type MSPRole struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -327,7 +327,7 @@ type MSPRole struct {
 func (x *MSPRole) Reset() {
 	*x = MSPRole{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_msp_principal_proto_msgTypes[2]
+		mi := &file_msp_principle_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -340,7 +340,7 @@ func (x *MSPRole) String() string {
 func (*MSPRole) ProtoMessage() {}
 
 func (x *MSPRole) ProtoReflect() protoreflect.Message {
-	mi := &file_msp_principal_proto_msgTypes[2]
+	mi := &file_msp_principle_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -353,7 +353,7 @@ func (x *MSPRole) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MSPRole.ProtoReflect.Descriptor instead.
 func (*MSPRole) Descriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{2}
+	return file_msp_principle_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *MSPRole) GetMspIdentifier() string {
@@ -382,7 +382,7 @@ type MSPIdentityAnonymity struct {
 func (x *MSPIdentityAnonymity) Reset() {
 	*x = MSPIdentityAnonymity{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_msp_principal_proto_msgTypes[3]
+		mi := &file_msp_principle_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -395,7 +395,7 @@ func (x *MSPIdentityAnonymity) String() string {
 func (*MSPIdentityAnonymity) ProtoMessage() {}
 
 func (x *MSPIdentityAnonymity) ProtoReflect() protoreflect.Message {
-	mi := &file_msp_principal_proto_msgTypes[3]
+	mi := &file_msp_principle_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +408,7 @@ func (x *MSPIdentityAnonymity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MSPIdentityAnonymity.ProtoReflect.Descriptor instead.
 func (*MSPIdentityAnonymity) Descriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{3}
+	return file_msp_principle_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MSPIdentityAnonymity) GetAnonymityType() MSPIdentityAnonymity_MSPIdentityAnonymityType {
@@ -418,33 +418,33 @@ func (x *MSPIdentityAnonymity) GetAnonymityType() MSPIdentityAnonymity_MSPIdenti
 	return MSPIdentityAnonymity_NOMINAL
 }
 
-// CombinedPrincipal 当 PrincipalClassification 表明需要 combined 形式的主体时，CombinedPrincipal 将管
-// 理策略主体的 Principal 字段的组织
-type CombinedPrincipal struct {
+// CombinedPrinciple 当 PrincipleClassification 表明需要 combined 形式的主体时，CombinedPrinciple 将管
+// 理策略主体的 Principle 字段的组织
+type CombinedPrinciple struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Principals []*MSPPrincipal `protobuf:"bytes,1,rep,name=principals,proto3" json:"principals,omitempty"` // Principals 表示 combined 主体。
+	Principles []*MSPPrinciple `protobuf:"bytes,1,rep,name=principles,proto3" json:"principles,omitempty"` // Principles 表示 combined 主体。
 }
 
-func (x *CombinedPrincipal) Reset() {
-	*x = CombinedPrincipal{}
+func (x *CombinedPrinciple) Reset() {
+	*x = CombinedPrinciple{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_msp_principal_proto_msgTypes[4]
+		mi := &file_msp_principle_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *CombinedPrincipal) String() string {
+func (x *CombinedPrinciple) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CombinedPrincipal) ProtoMessage() {}
+func (*CombinedPrinciple) ProtoMessage() {}
 
-func (x *CombinedPrincipal) ProtoReflect() protoreflect.Message {
-	mi := &file_msp_principal_proto_msgTypes[4]
+func (x *CombinedPrinciple) ProtoReflect() protoreflect.Message {
+	mi := &file_msp_principle_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -455,32 +455,32 @@ func (x *CombinedPrincipal) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CombinedPrincipal.ProtoReflect.Descriptor instead.
-func (*CombinedPrincipal) Descriptor() ([]byte, []int) {
-	return file_msp_principal_proto_rawDescGZIP(), []int{4}
+// Deprecated: Use CombinedPrinciple.ProtoReflect.Descriptor instead.
+func (*CombinedPrinciple) Descriptor() ([]byte, []int) {
+	return file_msp_principle_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *CombinedPrincipal) GetPrincipals() []*MSPPrincipal {
+func (x *CombinedPrinciple) GetPrinciples() []*MSPPrinciple {
 	if x != nil {
-		return x.Principals
+		return x.Principles
 	}
 	return nil
 }
 
-var File_msp_principal_proto protoreflect.FileDescriptor
+var File_msp_principle_proto protoreflect.FileDescriptor
 
-var file_msp_principal_proto_rawDesc = []byte{
-	0x0a, 0x13, 0x6d, 0x73, 0x70, 0x5f, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x2e,
+var file_msp_principle_proto_rawDesc = []byte{
+	0x0a, 0x13, 0x6d, 0x73, 0x70, 0x5f, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x2e,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x04, 0x70, 0x6d, 0x73, 0x70, 0x22, 0xe8, 0x01, 0x0a, 0x0c,
-	0x4d, 0x53, 0x50, 0x50, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x12, 0x5c, 0x0a, 0x18,
-	0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x5f, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x69,
+	0x4d, 0x53, 0x50, 0x50, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x12, 0x5c, 0x0a, 0x18,
+	0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x5f, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x69,
 	0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x21,
 	0x2e, 0x70, 0x6d, 0x73, 0x70, 0x2e, 0x4d, 0x53, 0x50, 0x50, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70,
-	0x61, 0x6c, 0x2e, 0x43, 0x6c, 0x61, 0x73, 0x73, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f,
-	0x6e, 0x52, 0x17, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x43, 0x6c, 0x61, 0x73,
+	0x6c, 0x65, 0x2e, 0x43, 0x6c, 0x61, 0x73, 0x73, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x52, 0x17, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x43, 0x6c, 0x61, 0x73,
 	0x73, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1c, 0x0a, 0x09, 0x70, 0x72,
-	0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70,
-	0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x22, 0x5c, 0x0a, 0x0e, 0x43, 0x6c, 0x61, 0x73,
+	0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70,
+	0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x22, 0x5c, 0x0a, 0x0e, 0x43, 0x6c, 0x61, 0x73,
 	0x73, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x08, 0x0a, 0x04, 0x52, 0x4f,
 	0x4c, 0x45, 0x10, 0x00, 0x12, 0x15, 0x0a, 0x11, 0x4f, 0x52, 0x47, 0x41, 0x4e, 0x49, 0x5a, 0x41,
 	0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x55, 0x4e, 0x49, 0x54, 0x10, 0x01, 0x12, 0x0c, 0x0a, 0x08, 0x49,
@@ -520,44 +520,44 @@ var file_msp_principal_proto_rawDesc = []byte{
 	0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x0b, 0x0a, 0x07, 0x4e, 0x4f, 0x4d, 0x49, 0x4e, 0x41, 0x4c,
 	0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x41, 0x4e, 0x4f, 0x4e, 0x59, 0x4d, 0x4f, 0x55, 0x53, 0x10,
 	0x01, 0x22, 0x47, 0x0a, 0x11, 0x43, 0x6f, 0x6d, 0x62, 0x69, 0x6e, 0x65, 0x64, 0x50, 0x72, 0x69,
-	0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x12, 0x32, 0x0a, 0x0a, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69,
-	0x70, 0x61, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x70, 0x6d, 0x73,
-	0x70, 0x2e, 0x4d, 0x53, 0x50, 0x50, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x52, 0x0a,
-	0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x61, 0x6c, 0x73, 0x42, 0x28, 0x5a, 0x26, 0x67, 0x69,
+	0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x12, 0x32, 0x0a, 0x0a, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69,
+	0x70, 0x6c, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x70, 0x6d, 0x73,
+	0x70, 0x2e, 0x4d, 0x53, 0x50, 0x50, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x52, 0x0a,
+	0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70, 0x6c, 0x65, 0x73, 0x42, 0x28, 0x5a, 0x26, 0x67, 0x69,
 	0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x31, 0x31, 0x30, 0x39, 0x30, 0x38, 0x31,
 	0x35, 0x2f, 0x6d, 0x61, 0x79, 0x79, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f,
 	0x70, 0x6d, 0x73, 0x70, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
-	file_msp_principal_proto_rawDescOnce sync.Once
-	file_msp_principal_proto_rawDescData = file_msp_principal_proto_rawDesc
+	file_msp_principle_proto_rawDescOnce sync.Once
+	file_msp_principle_proto_rawDescData = file_msp_principle_proto_rawDesc
 )
 
-func file_msp_principal_proto_rawDescGZIP() []byte {
-	file_msp_principal_proto_rawDescOnce.Do(func() {
-		file_msp_principal_proto_rawDescData = protoimpl.X.CompressGZIP(file_msp_principal_proto_rawDescData)
+func file_msp_principle_proto_rawDescGZIP() []byte {
+	file_msp_principle_proto_rawDescOnce.Do(func() {
+		file_msp_principle_proto_rawDescData = protoimpl.X.CompressGZIP(file_msp_principle_proto_rawDescData)
 	})
-	return file_msp_principal_proto_rawDescData
+	return file_msp_principle_proto_rawDescData
 }
 
-var file_msp_principal_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_msp_principal_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
-var file_msp_principal_proto_goTypes = []interface{}{
-	(MSPPrincipal_Classification)(0),                   // 0: pmsp.MSPPrincipal.Classification
+var file_msp_principle_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_msp_principle_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_msp_principle_proto_goTypes = []interface{}{
+	(MSPPrinciple_Classification)(0),                   // 0: pmsp.MSPPrinciple.Classification
 	(MSPRole_MSPRoleType)(0),                           // 1: pmsp.MSPRole.MSPRoleType
 	(MSPIdentityAnonymity_MSPIdentityAnonymityType)(0), // 2: pmsp.MSPIdentityAnonymity.MSPIdentityAnonymityType
-	(*MSPPrincipal)(nil),                               // 3: pmsp.MSPPrincipal
+	(*MSPPrinciple)(nil),                               // 3: pmsp.MSPPrinciple
 	(*OrganizationUnit)(nil),                           // 4: pmsp.OrganizationUnit
 	(*MSPRole)(nil),                                    // 5: pmsp.MSPRole
 	(*MSPIdentityAnonymity)(nil),                       // 6: pmsp.MSPIdentityAnonymity
-	(*CombinedPrincipal)(nil),                          // 7: pmsp.CombinedPrincipal
+	(*CombinedPrinciple)(nil),                          // 7: pmsp.CombinedPrinciple
 }
-var file_msp_principal_proto_depIdxs = []int32{
-	0, // 0: pmsp.MSPPrincipal.principal_classification:type_name -> pmsp.MSPPrincipal.Classification
+var file_msp_principle_proto_depIdxs = []int32{
+	0, // 0: pmsp.MSPPrinciple.principle_classification:type_name -> pmsp.MSPPrinciple.Classification
 	1, // 1: pmsp.MSPRole.role:type_name -> pmsp.MSPRole.MSPRoleType
 	2, // 2: pmsp.MSPIdentityAnonymity.anonymity_type:type_name -> pmsp.MSPIdentityAnonymity.MSPIdentityAnonymityType
-	3, // 3: pmsp.CombinedPrincipal.principals:type_name -> pmsp.MSPPrincipal
+	3, // 3: pmsp.CombinedPrinciple.principles:type_name -> pmsp.MSPPrinciple
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
@@ -565,14 +565,14 @@ var file_msp_principal_proto_depIdxs = []int32{
 	0, // [0:4] is the sub-list for field type_name
 }
 
-func init() { file_msp_principal_proto_init() }
-func file_msp_principal_proto_init() {
-	if File_msp_principal_proto != nil {
+func init() { file_msp_principle_proto_init() }
+func file_msp_principle_proto_init() {
+	if File_msp_principle_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_msp_principal_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*MSPPrincipal); i {
+		file_msp_principle_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MSPPrinciple); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -583,7 +583,7 @@ func file_msp_principal_proto_init() {
 				return nil
 			}
 		}
-		file_msp_principal_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+		file_msp_principle_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*OrganizationUnit); i {
 			case 0:
 				return &v.state
@@ -595,7 +595,7 @@ func file_msp_principal_proto_init() {
 				return nil
 			}
 		}
-		file_msp_principal_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+		file_msp_principle_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*MSPRole); i {
 			case 0:
 				return &v.state
@@ -607,7 +607,7 @@ func file_msp_principal_proto_init() {
 				return nil
 			}
 		}
-		file_msp_principal_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+		file_msp_principle_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*MSPIdentityAnonymity); i {
 			case 0:
 				return &v.state
@@ -619,8 +619,8 @@ func file_msp_principal_proto_init() {
 				return nil
 			}
 		}
-		file_msp_principal_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CombinedPrincipal); i {
+		file_msp_principle_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CombinedPrinciple); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -636,19 +636,19 @@ func file_msp_principal_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_msp_principal_proto_rawDesc,
+			RawDescriptor: file_msp_principle_proto_rawDesc,
 			NumEnums:      3,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_msp_principal_proto_goTypes,
-		DependencyIndexes: file_msp_principal_proto_depIdxs,
-		EnumInfos:         file_msp_principal_proto_enumTypes,
-		MessageInfos:      file_msp_principal_proto_msgTypes,
+		GoTypes:           file_msp_principle_proto_goTypes,
+		DependencyIndexes: file_msp_principle_proto_depIdxs,
+		EnumInfos:         file_msp_principle_proto_enumTypes,
+		MessageInfos:      file_msp_principle_proto_msgTypes,
 	}.Build()
-	File_msp_principal_proto = out.File
-	file_msp_principal_proto_rawDesc = nil
-	file_msp_principal_proto_goTypes = nil
-	file_msp_principal_proto_depIdxs = nil
+	File_msp_principle_proto = out.File
+	file_msp_principle_proto_rawDesc = nil
+	file_msp_principle_proto_goTypes = nil
+	file_msp_principle_proto_depIdxs = nil
 }
