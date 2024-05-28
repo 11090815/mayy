@@ -1,12 +1,14 @@
 package msp
 
 import (
+	"bytes"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"math/big"
 
 	"github.com/11090815/mayy/common/mlog"
+	"github.com/11090815/mayy/csp/softimpl/ecdsa"
 	"github.com/11090815/mayy/errors"
 	"github.com/11090815/mayy/protobuf/pmsp"
 	"google.golang.org/protobuf/proto"
@@ -91,4 +93,22 @@ func oidInExtensions(oid asn1.ObjectIdentifier, exts []pkix.Extension) bool {
 		}
 	}
 	return false
+}
+
+func isIdentitySignedInCanonicalForm(sig []byte, mspID string, pemEncodedIdentity []byte) error {
+	r, s, err := ecdsa.UnmarshalECDSASignature(sig)
+	if err != nil {
+		return err
+	}
+
+	expectedSig, err := ecdsa.MarshalECDSASignature(r, s)
+	if err != nil {
+		return err
+	}
+
+	if !bytes.Equal(expectedSig, sig) {
+		return errors.NewErrorf("identity %s for msp %s has a non canonical signature", string(pemEncodedIdentity), mspID)
+	}
+
+	return nil
 }

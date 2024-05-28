@@ -17,7 +17,7 @@ type MSPManager interface {
 type MSP interface {
 	IdentityDeserializer
 
-	Setup(config *pmsp.MSPConfig)
+	Setup(config *pmsp.MSPConfig) error
 
 	GetVersion() MSPVersion
 

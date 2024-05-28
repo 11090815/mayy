@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/pem"
 	"sync"
 	"time"
 
 	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl/hash"
+	"github.com/11090815/mayy/errors"
 	"github.com/11090815/mayy/protobuf/pmsp"
+	"google.golang.org/protobuf/proto"
 )
 
 type identity struct {
@@ -69,7 +72,7 @@ func (id *identity) GetMSPIdentifier() string {
 }
 
 func (id *identity) Validate() error {
-
+	return id.msp.Validate(id)
 }
 
 func (id *identity) GetOrganizationalUnits() []*OUIdentifier {
@@ -100,11 +103,33 @@ func (id *identity) Anonymous() bool {
 }
 
 func (id *identity) Verify(msg []byte, signature []byte) error {
+	hashOpt, err := hash.GetHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
+	if err != nil {
+		return errors.NewErrorf("failed verifying the signature, the error is \"%s\"", err.Error())
+	}
+	digest, err := id.msp.csp.Hash(msg, hashOpt)
+	if err != nil {
+		return errors.NewErrorf("failed verifying the signature, the error is \"%s\"", err.Error())
+	}
+	valid, err := id.msp.csp.Verify(id.publicKey, signature, digest, nil)
+	if err != nil {
+		return errors.NewErrorf("failed verifying the signature, the error is \"%s\"", err.Error())
+	} else if !valid {
+		return errors.NewError("invalid signature")
+	}
 
+	return nil
 }
 
 func (id *identity) Serialize() ([]byte, error) {
+	block := &pem.Block{Type: "CERTIFICATE", Bytes: id.cert.Raw}
+	certBytes := pem.EncodeToMemory(block)
+	sid := &pmsp.SerializedIdentity{
+		Mspid:   id.msp.identifier,
+		IdBytes: certBytes,
+	}
 
+	return proto.Marshal(sid)
 }
 
 func (id *identity) SatisfiesPrinciple(principal *pmsp.MSPPrinciple) error {
