@@ -27,7 +27,7 @@ type identity struct {
 	publicKey csp.Key
 
 	// msp 是一个索引，该 msp 管理此身份。
-	msp *msp
+	msp *mspImpl
 
 	validationMutex sync.Mutex
 
@@ -36,7 +36,7 @@ type identity struct {
 	validationErr error
 }
 
-func newIdentity(cert *x509.Certificate, pk csp.Key, msp *msp) (id Identity, err error) {
+func newIdentity(cert *x509.Certificate, pk csp.Key, msp *mspImpl) (id Identity, err error) {
 	cert, err = msp.sanitizeCert(cert)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ type signingIdentity struct {
 	signer crypto.Signer
 }
 
-func newSigningIdentity(cert *x509.Certificate, pk csp.Key, signer crypto.Signer, msp *msp) (SigningIdentity, error) {
+func newSigningIdentity(cert *x509.Certificate, pk csp.Key, signer crypto.Signer, msp *mspImpl) (SigningIdentity, error) {
 	id, err := newIdentity(cert, pk, msp)
 	if err != nil {
 		return nil, err

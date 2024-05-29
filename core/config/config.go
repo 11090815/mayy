@@ -12,7 +12,7 @@ var _config *viper.Viper
 
 func init() {
 	path := os.Getenv("MAYY_HOME")
-	viper.AddConfigPath(path)
+	viper.AddConfigPath(path + "/sampleconfig")
 	viper.SetConfigName("config.yaml")
 	viper.SetConfigType("yaml")
 	err := viper.ReadInConfig()

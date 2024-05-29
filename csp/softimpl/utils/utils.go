@@ -59,8 +59,14 @@ func PublicKeyToPEM(publickey *ecdsa.PublicKey) ([]byte, error) {
 // ECDSA PRIVATE KEY
 
 func DerToPrivateKey(der []byte) (*ecdsa.PrivateKey, error) {
+	
 	if key, err := x509.ParseECPrivateKey(der); err == nil {
 		return key, nil
+	} else if key, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		if ecdsaK, ok := key.(*ecdsa.PrivateKey); ok {
+			return ecdsaK, nil
+		}
+		return nil, errors.NewErrorf("invalid raw material, parsing and getting a private key doesn't belong to ECDSA")
 	} else {
 		return nil, errors.NewErrorf("invalid raw material, parsing and getting a private key doesn't belong to ECDSA")
 	}

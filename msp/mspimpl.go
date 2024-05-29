@@ -31,7 +31,7 @@ type validateIdentityOUsFuncType func(id *identity) error
 
 type setupAdminsInternalFuncType func(conf *pmsp.MayyMSPConfig) error
 
-type msp struct {
+type mspImpl struct {
 	// identifier 此 msp 的标识符。
 	identifier string
 	version    MSPVersion
@@ -82,7 +82,7 @@ type msp struct {
 func newCspMsp(version MSPVersion, csp csp.CSP) (MSP, error) {
 	mspLogger.Debug("Creating CSP-based MSP instance.")
 
-	m := &msp{
+	m := &mspImpl{
 		version: version,
 		csp:     csp,
 	}
@@ -103,7 +103,7 @@ func newCspMsp(version MSPVersion, csp csp.CSP) (MSP, error) {
 /* ------------------------------------------------------------------------------------------ */
 // msp exportable
 
-func (msp *msp) SatisfiesPrinciple(id Identity, principle *pmsp.MSPPrinciple) error {
+func (msp *mspImpl) SatisfiesPrinciple(id Identity, principle *pmsp.MSPPrinciple) error {
 	principles, err := collectPrinciples(principle, msp.GetVersion())
 	if err != nil {
 		return err
@@ -116,34 +116,34 @@ func (msp *msp) SatisfiesPrinciple(id Identity, principle *pmsp.MSPPrinciple) er
 	return nil
 }
 
-func (msp *msp) GetVersion() MSPVersion {
+func (msp *mspImpl) GetVersion() MSPVersion {
 	return msp.version
 }
 
-func (msp *msp) GetType() ProviderType {
+func (msp *mspImpl) GetType() ProviderType {
 	return MAYY
 }
 
-func (msp *msp) GetIdentifier() string {
+func (msp *mspImpl) GetIdentifier() string {
 	return msp.identifier
 }
 
-func (msp *msp) GetTLSRootCerts() [][]byte {
+func (msp *mspImpl) GetTLSRootCerts() [][]byte {
 	return msp.tlsRootCerts
 }
 
-func (msp *msp) GetTLSIntermediateCerts() [][]byte {
+func (msp *mspImpl) GetTLSIntermediateCerts() [][]byte {
 	return msp.tlsIntermediateCerts
 }
 
-func (msp *msp) GetDefaultSigningIdentity() (SigningIdentity, error) {
+func (msp *mspImpl) GetDefaultSigningIdentity() (SigningIdentity, error) {
 	if msp.signer == nil {
 		return nil, errors.NewErrorf("msp %s has not specified a signing identity", msp.identifier)
 	}
 	return msp.signer, nil
 }
 
-func (msp *msp) Validate(id Identity) error {
+func (msp *mspImpl) Validate(id Identity) error {
 	switch i := id.(type) {
 	case *identity:
 		return msp.validateIdentity(i)
@@ -152,7 +152,7 @@ func (msp *msp) Validate(id Identity) error {
 	}
 }
 
-func (msp *msp) DeserializeIdentity(serializedId []byte) (Identity, error) {
+func (msp *mspImpl) DeserializeIdentity(serializedId []byte) (Identity, error) {
 	serializedIdentity := &pmsp.SerializedIdentity{}
 	if err := proto.Unmarshal(serializedId, serializedIdentity); err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (msp *msp) DeserializeIdentity(serializedId []byte) (Identity, error) {
 	return msp.deserializeIdentityInternal(serializedIdentity.IdBytes)
 }
 
-func (msp *msp) IsWellFormed(identity *pmsp.SerializedIdentity) error {
+func (msp *mspImpl) IsWellFormed(identity *pmsp.SerializedIdentity) error {
 	cert, err := msp.getCertFromPem(identity.IdBytes)
 	if err != nil {
 		return err
@@ -177,7 +177,7 @@ func (msp *msp) IsWellFormed(identity *pmsp.SerializedIdentity) error {
 	return isIdentitySignedInCanonicalForm(cert.Signature, identity.Mspid, identity.IdBytes)
 }
 
-func (msp *msp) Setup(conf *pmsp.MSPConfig) error {
+func (msp *mspImpl) Setup(conf *pmsp.MSPConfig) error {
 	if conf == nil {
 		return errors.NewError("nil configuration for msp")
 	}
@@ -196,7 +196,7 @@ func (msp *msp) Setup(conf *pmsp.MSPConfig) error {
 /* ------------------------------------------------------------------------------------------ */
 // principle
 
-func (msp *msp) satisfiesPrincipleInternalV1_0(id Identity, principle *pmsp.MSPPrinciple) error {
+func (msp *mspImpl) satisfiesPrincipleInternalV1_0(id Identity, principle *pmsp.MSPPrinciple) error {
 	switch principle.PrincipleClassification {
 	case pmsp.MSPPrinciple_ROLE:
 		if !msp.ouEnforcement {
@@ -295,7 +295,7 @@ func (msp *msp) satisfiesPrincipleInternalV1_0(id Identity, principle *pmsp.MSPP
 }
 
 // hasOURole 查看给定身份的组织单元 organizational unit 是否被注册在 msp 内。
-func (msp *msp) hasOURole(id Identity, mspRole pmsp.MSPRole_MSPRoleType) error {
+func (msp *mspImpl) hasOURole(id Identity, mspRole pmsp.MSPRole_MSPRoleType) error {
 	if !msp.ouEnforcement {
 		return errors.NewError("node organizational unit option is not activated")
 	}
@@ -311,7 +311,7 @@ func (msp *msp) hasOURole(id Identity, mspRole pmsp.MSPRole_MSPRoleType) error {
 }
 
 // hasOURoleInternal 查看给定身份的组织单元 organizational unit 是否被注册在 msp 内。
-func (msp *msp) hasOURoleInternal(id *identity, mspRole pmsp.MSPRole_MSPRoleType) error {
+func (msp *mspImpl) hasOURoleInternal(id *identity, mspRole pmsp.MSPRole_MSPRoleType) error {
 	var nodeOU *OUIdentifier
 
 	switch mspRole {
@@ -344,7 +344,7 @@ func (msp *msp) hasOURoleInternal(id *identity, mspRole pmsp.MSPRole_MSPRoleType
 // get validation chain
 
 // getValidationChainForCSPIdentity 返回 *identity.cert 的证书验证链。
-func (msp *msp) getValidationChainForCSPIdentity(id *identity) ([]*x509.Certificate, error) {
+func (msp *mspImpl) getValidationChainForCSPIdentity(id *identity) ([]*x509.Certificate, error) {
 	if id.cert.IsCA {
 		return nil, errors.NewError("ca certificate cannot be used as an identity")
 	}
@@ -356,7 +356,7 @@ func (msp *msp) getValidationChainForCSPIdentity(id *identity) ([]*x509.Certific
 // 如果是中级 CA 证书，那么此证书是不能出现在 certificationTreeInternalNodesMap 里面的。如果 cert 不是中级 CA 证书，
 // 那么 cert 一般是一个 identity 的证书，cert 的父级证书也不应该出现在 certificationTreeInternalNodesMap 里面。在
 // 满足以上条件后，返回 cert 的证书验证链。
-func (msp *msp) getValidationChain(cert *x509.Certificate, isIntermediateChain bool) ([]*x509.Certificate, error) {
+func (msp *mspImpl) getValidationChain(cert *x509.Certificate, isIntermediateChain bool) ([]*x509.Certificate, error) {
 	validationChain, err := msp.getUniqueValidationChain(cert, msp.getValidityOptsForCert(cert))
 	if err != nil {
 		return nil, err
@@ -379,7 +379,7 @@ func (msp *msp) getValidationChain(cert *x509.Certificate, isIntermediateChain b
 }
 
 // getUniqueValidationChain 获取证书的验证链。
-func (msp *msp) getUniqueValidationChain(cert *x509.Certificate, opts x509.VerifyOptions) ([]*x509.Certificate, error) {
+func (msp *mspImpl) getUniqueValidationChain(cert *x509.Certificate, opts x509.VerifyOptions) ([]*x509.Certificate, error) {
 	validationChains, err := cert.Verify(opts) // Verify 的用法可以参考 certificate_test.go 中的测试案例 TestCertificateVerify
 	if err != nil {
 		return nil, errors.NewErrorf("failed verifying the given certificate against verify options %v, the error is \"%s\"", opts, err.Error())
@@ -400,7 +400,7 @@ func (msp *msp) getUniqueValidationChain(cert *x509.Certificate, opts x509.Verif
 // 则直接返回 nil-error，否则如果 *identity 所具有的 organizational unit 不存在于 msp 内，则会返
 // 回错误。接着检查 identity 的 organizational unit 是否与 msp 内的 client、peer、admin 和 orderer
 // 中的其中一个相匹配，如果不匹配，返回错误，如果匹配多个也返回错误。
-func (msp *msp) validateIdentity(id *identity) error {
+func (msp *mspImpl) validateIdentity(id *identity) error {
 	id.validationMutex.Lock()
 	defer id.validationMutex.Unlock()
 
@@ -432,7 +432,7 @@ func (msp *msp) validateIdentity(id *identity) error {
 	return nil
 }
 
-func (msp *msp) validateIdentityOUsV1_0(id *identity) error {
+func (msp *mspImpl) validateIdentityOUsV1_0(id *identity) error {
 	if len(msp.ouIdentifiers) > 0 {
 		found := false
 
@@ -502,7 +502,7 @@ func (msp *msp) validateIdentityOUsV1_0(id *identity) error {
 // 取父级证书的 ski，然后遍历 msp 的撤销证书列表 CRL，获取每个撤销证书的 aki（aki 是撤销证书的父级证书的 ski），如果 aki 与
 // 前面的 ski 相等，则说明 cert 的父级证书产生了撤销证书，遍历那些撤销证书，如果其中有撤销证书的序列号等于 cert 的序列号，则
 // 说明此 cert 已被撤销，需要返回对应的错误，否则此方法返回 nil-error。
-func (msp *msp) validateCAIdentity(id *identity) error {
+func (msp *mspImpl) validateCAIdentity(id *identity) error {
 	if id.cert.IsCA {
 		validationChain, err := msp.getUniqueValidationChain(id.cert, msp.getValidityOptsForCert(id.cert))
 		if err != nil {
@@ -518,7 +518,7 @@ func (msp *msp) validateCAIdentity(id *identity) error {
 	}
 }
 
-func (msp *msp) validateTLSCACertificate(cert *x509.Certificate, opts x509.VerifyOptions) error {
+func (msp *mspImpl) validateTLSCACertificate(cert *x509.Certificate, opts x509.VerifyOptions) error {
 	if cert.IsCA {
 		validationChain, err := msp.getUniqueValidationChain(cert, opts)
 		if err != nil {
@@ -540,7 +540,7 @@ func (msp *msp) validateTLSCACertificate(cert *x509.Certificate, opts x509.Verif
 // 撤销证书列表 CRL，获取每个撤销证书的 aki（aki 是撤销证书的父级证书的 ski），如果 aki 与前面的 ski 相等，则说明 cert 的父
 // 级证书产生了撤销证书，遍历那些撤销证书，如果其中有撤销证书的序列号等于 cert 的序列号，则说明此 cert 已被撤销，需要返回对应
 // 的错误，否则此方法返回 nil-error。
-func (msp *msp) validateCertAgainstChain(cert *x509.Certificate, validationChain []*x509.Certificate) error {
+func (msp *mspImpl) validateCertAgainstChain(cert *x509.Certificate, validationChain []*x509.Certificate) error {
 	ski, err := getSubjectKeyIdentifierFromCert(validationChain[1]) // 获取为 identity 背书的证书的 ski。
 	if err != nil {
 		return errors.NewErrorf("failed validating identity against calidation chain, the error is \"%s\"", err.Error())
@@ -568,7 +568,7 @@ func (msp *msp) validateCertAgainstChain(cert *x509.Certificate, validationChain
 /* ------------------------------------------------------------------------------------------ */
 // setup msp
 
-func (msp *msp) setupV1_0(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupV1_0(conf *pmsp.MayyMSPConfig) error {
 	if err := msp.setupCrypto(conf); err != nil {
 		return err
 	}
@@ -622,7 +622,7 @@ func (msp *msp) setupV1_0(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) setupCrypto(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupCrypto(conf *pmsp.MayyMSPConfig) error {
 	msp.cryptoConfig = conf.CryptoConfig
 	if msp.cryptoConfig == nil {
 		msp.cryptoConfig = &pmsp.MayyCryptoConfig{
@@ -640,7 +640,7 @@ func (msp *msp) setupCrypto(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) setupCAs(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupCAs(conf *pmsp.MayyMSPConfig) error {
 	if len(conf.RootCerts) == 0 {
 		return errors.NewError("expected at least one ca certificate")
 	}
@@ -692,7 +692,7 @@ func (msp *msp) setupCAs(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) finalizeSetupCAs() error {
+func (msp *mspImpl) finalizeSetupCAs() error {
 	for _, id := range append(append([]Identity{}, msp.rootCerts...), msp.intermediateCerts...) {
 		if err := msp.validateCAIdentity(id.(*identity)); err != nil {
 			return errors.NewErrorf("failed setting up ca, the error is \"%s\"", err.Error())
@@ -714,11 +714,11 @@ func (msp *msp) finalizeSetupCAs() error {
 	return nil
 }
 
-func (msp *msp) setupAdmins(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupAdmins(conf *pmsp.MayyMSPConfig) error {
 	return msp.internalSetupAdminsFunc(conf)
 }
 
-func (msp *msp) setupAdminsV1_0(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupAdminsV1_0(conf *pmsp.MayyMSPConfig) error {
 	msp.admins = make([]Identity, len(conf.Admins))
 	for i, adminCert := range conf.Admins {
 		id, _, err := msp.getIdentityFromCert(adminCert)
@@ -735,7 +735,7 @@ func (msp *msp) setupAdminsV1_0(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) setupCRLs(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupCRLs(conf *pmsp.MayyMSPConfig) error {
 	msp.CRL = make([]*x509.RevocationList, len(conf.RevocationList))
 	for i, crlBytes := range conf.RevocationList {
 		crl, err := x509.ParseRevocationList(crlBytes)
@@ -765,7 +765,7 @@ func (msp *msp) setupCRLs(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) setupSigningIdentity(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupSigningIdentity(conf *pmsp.MayyMSPConfig) error {
 	if conf.SigningIdentity != nil {
 		sid, err := msp.getSigningIdentityFromConf(conf.SigningIdentity)
 		if err != nil {
@@ -787,7 +787,7 @@ func (msp *msp) setupSigningIdentity(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) setupTLSCAs(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupTLSCAs(conf *pmsp.MayyMSPConfig) error {
 	opts := &x509.VerifyOptions{
 		Roots:         x509.NewCertPool(),
 		Intermediates: x509.NewCertPool(),
@@ -795,7 +795,7 @@ func (msp *msp) setupTLSCAs(conf *pmsp.MayyMSPConfig) error {
 
 	msp.tlsRootCerts = make([][]byte, len(conf.TlsRootCerts))
 	rootCerts := make([]*x509.Certificate, len(conf.TlsRootCerts))
-	for i, tlsRoorCert := range msp.tlsRootCerts {
+	for i, tlsRoorCert := range conf.TlsRootCerts {
 		cert, err := msp.getCertFromPem(tlsRoorCert)
 		if err != nil {
 			return err
@@ -831,7 +831,7 @@ func (msp *msp) setupTLSCAs(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
-func (msp *msp) setupOUs(conf *pmsp.MayyMSPConfig) error {
+func (msp *mspImpl) setupOUs(conf *pmsp.MayyMSPConfig) error {
 	msp.ouIdentifiers = make(map[string][][]byte)
 	for _, ou := range conf.OrganizationUnitIdentifiers {
 		certifiersIdentifier, err := msp.getCertifiersIdentifier(ou.Certificate)
@@ -939,7 +939,7 @@ func (msp *msp) setupOUs(conf *pmsp.MayyMSPConfig) error {
 /* ------------------------------------------------------------------------------------------ */
 // utils
 
-func (msp *msp) getValidityOptsForCert(cert *x509.Certificate) x509.VerifyOptions {
+func (msp *mspImpl) getValidityOptsForCert(cert *x509.Certificate) x509.VerifyOptions {
 	return x509.VerifyOptions{
 		Roots:         msp.opts.Roots,
 		DNSName:       msp.opts.DNSName,
@@ -951,7 +951,7 @@ func (msp *msp) getValidityOptsForCert(cert *x509.Certificate) x509.VerifyOption
 
 // getCertifiersIdentifier 给定一个证书的 PEM 格式编码的字节数组，此证书必须是 root ca
 // 证书或 intermediate ca 证书，不然会报错。
-func (msp *msp) getCertifiersIdentifier(certRaw []byte) ([]byte, error) {
+func (msp *mspImpl) getCertifiersIdentifier(certRaw []byte) ([]byte, error) {
 	cert, err := msp.getCertFromPem(certRaw)
 	if err != nil {
 		return nil, err
@@ -1010,7 +1010,7 @@ func (msp *msp) getCertifiersIdentifier(certRaw []byte) ([]byte, error) {
 //	*identity.cert的证书链计算其哈希值：digest <- Hash(parent | grandparent | ...)，注意这里在计算证书链的哈希值时，没有考虑
 //	 *identity.cert，这样一来，getCertificationChainIdentifier 为不同的 Identity 计算出来的 certification identifier 可能是
 //	相同的，前提是这些Identity 是由相同的父级证书签发的。
-func (msp *msp) getCertificationChainIdentifier(id Identity) ([]byte, error) {
+func (msp *mspImpl) getCertificationChainIdentifier(id Identity) ([]byte, error) {
 	switch id := id.(type) {
 	case *identity:
 		if id == nil {
@@ -1035,7 +1035,7 @@ func (msp *msp) getCertificationChainIdentifier(id Identity) ([]byte, error) {
 	}
 }
 
-func (msp *msp) getCertificationChainIdentifierFromChain(chain []*x509.Certificate) ([]byte, error) {
+func (msp *mspImpl) getCertificationChainIdentifierFromChain(chain []*x509.Certificate) ([]byte, error) {
 	hashOpt, err := hash.GetHashOpt(msp.cryptoConfig.IdentityIdentifierHashFunction)
 	if err != nil {
 		return nil, errors.NewErrorf("failed getting certification chain identifier, the error is \"%s\"", err.Error())
@@ -1050,12 +1050,15 @@ func (msp *msp) getCertificationChainIdentifierFromChain(chain []*x509.Certifica
 	return hashFunc.Sum(nil), nil
 }
 
-func (msp *msp) getCertFromPem(idBytes []byte) (*x509.Certificate, error) {
+func (msp *mspImpl) getCertFromPem(idBytes []byte) (*x509.Certificate, error) {
+	if len(idBytes) == 0 {
+		return nil, errors.NewError("nil identity certificate")
+	}
 	block, _ := pem.Decode(idBytes)
 	return x509.ParseCertificate(block.Bytes)
 }
 
-func (msp *msp) getIdentityFromCert(certBytes []byte) (Identity, csp.Key, error) {
+func (msp *mspImpl) getIdentityFromCert(certBytes []byte) (Identity, csp.Key, error) {
 	cert, err := msp.getCertFromPem(certBytes)
 	if err != nil {
 		return nil, nil, err
@@ -1074,7 +1077,7 @@ func (msp *msp) getIdentityFromCert(certBytes []byte) (Identity, csp.Key, error)
 	return identity, pk, nil
 }
 
-func (msp *msp) isInAdmins(id *identity) bool {
+func (msp *mspImpl) isInAdmins(id *identity) bool {
 	for _, admin := range msp.admins {
 		if bytes.Equal(id.cert.Raw, admin.(*identity).cert.Raw) {
 			return true
@@ -1083,7 +1086,7 @@ func (msp *msp) isInAdmins(id *identity) bool {
 	return false
 }
 
-func (msp *msp) deserializeIdentityInternal(certBytes []byte) (Identity, error) {
+func (msp *mspImpl) deserializeIdentityInternal(certBytes []byte) (Identity, error) {
 	block, _ := pem.Decode(certBytes)
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
@@ -1098,7 +1101,7 @@ func (msp *msp) deserializeIdentityInternal(certBytes []byte) (Identity, error) 
 	return newIdentity(cert, pk, msp)
 }
 
-func (msp *msp) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo) (SigningIdentity, error) {
+func (msp *mspImpl) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo) (SigningIdentity, error) {
 	id, pk, err := msp.getIdentityFromCert(sidInfo.PublicSigner)
 	if err != nil {
 		return nil, err
@@ -1124,7 +1127,7 @@ func (msp *msp) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo) (S
 	return newSigningIdentity(id.(*identity).cert, pk, peerSigner, msp)
 }
 
-func (msp *msp) sanitizeCert(cert *x509.Certificate) (*x509.Certificate, error) {
+func (msp *mspImpl) sanitizeCert(cert *x509.Certificate) (*x509.Certificate, error) {
 	var err error
 
 	if isECDSASignedCert(cert) {

@@ -4,6 +4,7 @@ import (
 	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/sha512"
+	"fmt"
 	"reflect"
 
 	"github.com/11090815/mayy/csp"
@@ -27,9 +28,39 @@ type CSPFactory struct {
 }
 
 func InitCSPFactoryWithOpts(opts *FactoryOpts) {
-	defaultFactory = &CSPFactory{
-		opts: opts,
-		csps: make(map[string]csp.CSP),
+	if defaultFactory == nil {
+		defaultFactory = &CSPFactory{
+			opts: opts,
+			csps: make(map[string]csp.CSP),
+		}
+	} else {
+		changed := false
+		if opts.Kind != defaultFactory.opts.Kind {
+			panic(fmt.Sprintf("once the csp factory's kind is specified, it can not be changed from %s to %s", defaultFactory.opts.Kind, opts.Kind))
+		}
+		if opts.HashFamily != defaultFactory.opts.HashFamily {
+			defaultFactory.opts.HashFamily = opts.HashFamily
+		}
+		if opts.KeyStorePath != defaultFactory.opts.KeyStorePath {
+			defaultFactory.opts.KeyStorePath = opts.KeyStorePath
+			changed = true
+		}
+		if opts.ReadOnly != defaultFactory.opts.ReadOnly {
+			defaultFactory.opts.ReadOnly = opts.ReadOnly
+		}
+		if opts.SecurityLevel != defaultFactory.opts.SecurityLevel {
+			defaultFactory.opts.SecurityLevel = opts.SecurityLevel
+		}
+		if changed {
+			_, exists := defaultFactory.csps[opts.Kind]
+			if exists {
+				newCsp, err := createSoftBasedCSP(defaultFactory.opts)
+				if err != nil {
+					panic(err)
+				}
+				defaultFactory.csps[opts.Kind] = newCsp
+			}
+		}
 	}
 }
 
@@ -96,6 +127,7 @@ func createSoftBasedCSP(opts *FactoryOpts) (csp.CSP, error) {
 	softimpl.RegisterWidget(softImpl.(*softimpl.SoftCSPImpl), reflect.TypeOf(&ecdsa.ECDSAPrivateKeyImportOpts{}), ecdsa.NewECDSAPrivateKeyImporter())
 	softimpl.RegisterWidget(softImpl.(*softimpl.SoftCSPImpl), reflect.TypeOf(&ecdsa.ECDSAGoPublicKeyImportOpts{}), ecdsa.NewECDSAGoPublicKeyImporter())
 	softimpl.RegisterWidget(softImpl.(*softimpl.SoftCSPImpl), reflect.TypeOf(&ecdsa.ECDSAPKIXPublicKeyImportOpts{}), ecdsa.NewECDSAPKIXPublicKeyImporter())
+	softimpl.RegisterWidget(softImpl.(*softimpl.SoftCSPImpl), reflect.TypeOf(&ecdsa.ECDSAX509PublicKeyImportOpts{}), ecdsa.NewECDSAX509PublicKeyImporter(softImpl.(*softimpl.SoftCSPImpl)))
 	softimpl.RegisterWidget(softImpl.(*softimpl.SoftCSPImpl), reflect.TypeOf(&aes.AESKeyImportOpts{}), aes.NewAESKeyImporter())
 
 	// Key Derive
