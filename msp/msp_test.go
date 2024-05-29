@@ -83,5 +83,4 @@ func TestMain(m *testing.M) {
 func TestMSPParsers(t *testing.T) {
 	_, _, err := msp.(*mspImpl).getIdentityFromCert(nil)
 	require.Error(t, err)
-
 }

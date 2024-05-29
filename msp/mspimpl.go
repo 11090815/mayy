@@ -382,7 +382,8 @@ func (msp *mspImpl) getValidationChain(cert *x509.Certificate, isIntermediateCha
 func (msp *mspImpl) getUniqueValidationChain(cert *x509.Certificate, opts x509.VerifyOptions) ([]*x509.Certificate, error) {
 	validationChains, err := cert.Verify(opts) // Verify 的用法可以参考 certificate_test.go 中的测试案例 TestCertificateVerify
 	if err != nil {
-		return nil, errors.NewErrorf("failed verifying the given certificate against verify options %v, the error is \"%s\"", opts, err.Error())
+		panic(err)
+		// return nil, errors.NewErrorf("failed verifying the given certificate against verify options %v, the error is \"%s\"", opts, err.Error())
 	}
 
 	if len(validationChains) != 1 {
@@ -1109,6 +1110,7 @@ func (msp *mspImpl) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo
 
 	sk, err := msp.csp.GetKey(pk.SKI())
 	if err != nil {
+		mspLogger.Debugf("Cannot find the private key against ski %x.", pk.SKI())
 		if sidInfo.PrivateSigner == nil || sidInfo.PrivateSigner.KeyMaterial == nil {
 			return nil, errors.NewError("key material not found in SigningIdentityInfo")
 		}
@@ -1142,7 +1144,6 @@ func (msp *mspImpl) sanitizeCert(cert *x509.Certificate) (*x509.Certificate, err
 			validityOpts.Roots = x509.NewCertPool()
 			validityOpts.Roots.AddCert(cert)
 		}
-
 		chain, err := msp.getUniqueValidationChain(cert, validityOpts)
 		if err != nil {
 			return nil, err

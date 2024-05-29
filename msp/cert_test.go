@@ -4,14 +4,22 @@ import (
 	goecdsa "crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
+	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/11090815/mayy/core/config/configtest"
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
+	"github.com/11090815/mayy/csp/softimpl/tlsca"
+	"github.com/11090815/mayy/csp/softimpl/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -102,4 +110,60 @@ func generateSelfSignedCert(t *testing.T, now time.Time) (*goecdsa.PrivateKey, *
 	require.NoError(t, err)
 
 	return key, cert
+}
+
+func TestGenerateSampleConfigMsp(t *testing.T) {
+	writeFile := func(path string, content []byte) error {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.FileMode(0600))
+		if err != nil {
+			return err
+		}
+		n, err := file.Write(content)
+		if n != len(content) {
+			return fmt.Errorf("should write %d bytes, but %d", len(content), n)
+		}
+		if err != nil {
+			return err
+		}
+		if err = file.Sync(); err != nil {
+			return err
+		}
+		return file.Close()
+	}
+
+	path := configtest.GetDevMspDir()
+
+	generator := tlsca.NewTLSCAGenerator()
+	ca, err := generator.GenCA(&tlsca.TLSCAGenOpts{Level: 384})
+	require.NoError(t, err)
+	err = writeFile(filepath.Join(path, "cacerts/cacert.pem"), ca.CertBytes())
+	require.NoError(t, err)
+
+	admin, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
+	err = writeFile(filepath.Join(path, "admincerts/admincert.pem"), admin.Cert())
+	require.NoError(t, err)
+
+	signer, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
+	err = writeFile(filepath.Join(path, "signcerts/peer.pem"), signer.Cert())
+	require.NoError(t, err)
+	sk, err := utils.PEMToPrivateKey(signer.Key())
+	require.NoError(t, err)
+	raw := elliptic.Marshal(sk.Curve, sk.PublicKey.X, sk.PublicKey.Y)
+	hashFunc := sha256.New()
+	hashFunc.Write(raw)
+	ski := hex.EncodeToString(hashFunc.Sum(nil))
+	err = writeFile(filepath.Join(path, fmt.Sprintf("keystore/%s_sk", ski)), signer.Key())
+	require.NoError(t, err)
+
+	tlsca, err := generator.GenCA(&tlsca.TLSCAGenOpts{Level: 384})
+	require.NoError(t, err)
+	err = writeFile(filepath.Join(path, "tlscacerts/tlsroot.pem"), tlsca.CertBytes())
+	require.NoError(t, err)
+
+	tlsIntermediate, err := tlsca.NewIntermediateCA()
+	require.NoError(t, err)
+	err = writeFile(filepath.Join(path, "tlsintermediatecerts/tlsintermediate.pem"), tlsIntermediate.CertBytes())
+	require.NoError(t, err)
 }

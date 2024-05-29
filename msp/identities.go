@@ -56,7 +56,7 @@ func newIdentity(cert *x509.Certificate, pk csp.Key, msp *mspImpl) (id Identity,
 		Mspid: msp.identifier,
 		Id:    hex.EncodeToString(digest),
 	}
-	return &identity{identityIdentifier: identityIdentifier, cert: cert, msp: msp}, nil
+	return &identity{identityIdentifier: identityIdentifier, cert: cert, publicKey: pk, msp: msp}, nil
 }
 
 func (id *identity) ExpiresAt() time.Time {
