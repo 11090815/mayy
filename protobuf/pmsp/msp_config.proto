@@ -7,7 +7,7 @@ package pmsp;
 // MSPConfig 收集了 msp 的所有配置信息。
 message MSPConfig {
     int32 type      = 1; // Type 反映 msp 的类型，默认是 MAYY，其实现基于 X.509。
-    bytes config    = 2; // Config 表示 msp 特定的配置信息。
+    bytes config    = 2; // Config 表示 msp 特定的配置信息，即 *MayyMSPConfig 的 protobuf 编码。
 }
 
 // MayyMSPConfig 收集了 Mayy Config 的所有配置信息。
@@ -50,8 +50,8 @@ message MayyMSPConfig {
 
 // MayyCryptoConfig 由 msp 维护，其内包含 msp 配置加密算法的配置信息。
 message MayyCryptoConfig {
-    // SignatureHashFamily 指定在签名和验证签名期间所使用的哈希算法。
-    string signature_hash_family = 1;
+    // SignatureHashFunction 指定在签名和验证签名期间所使用的哈希算法。
+    string signature_hash_function = 1;
 
     // IdentityIdentifierHashFunction 指定在计算 msp 身份标识符时所使用的哈希算法。
     string identity_identifier_hash_function = 2;

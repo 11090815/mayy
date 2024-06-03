@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/hex"
 	"encoding/pem"
 	"strings"
 	"time"
@@ -623,16 +624,17 @@ func (msp *mspImpl) setupV1_0(conf *pmsp.MayyMSPConfig) error {
 	return nil
 }
 
+// setupCrypto 设置计算签名时，计算哈希值所用的哈希算法，设置计算身份标识符时所用的哈希算法。
 func (msp *mspImpl) setupCrypto(conf *pmsp.MayyMSPConfig) error {
 	msp.cryptoConfig = conf.CryptoConfig
 	if msp.cryptoConfig == nil {
 		msp.cryptoConfig = &pmsp.MayyCryptoConfig{
-			SignatureHashFamily:            hash.SHA256,
+			SignatureHashFunction:          hash.SHA256,
 			IdentityIdentifierHashFunction: hash.SHA256,
 		}
 	}
-	if msp.cryptoConfig.SignatureHashFamily == "" {
-		msp.cryptoConfig.SignatureHashFamily = hash.SHA256
+	if msp.cryptoConfig.SignatureHashFunction == "" {
+		msp.cryptoConfig.SignatureHashFunction = hash.SHA256
 	}
 	if msp.cryptoConfig.IdentityIdentifierHashFunction == "" {
 		msp.cryptoConfig.IdentityIdentifierHashFunction = hash.SHA256
@@ -1056,6 +1058,9 @@ func (msp *mspImpl) getCertFromPem(idBytes []byte) (*x509.Certificate, error) {
 		return nil, errors.NewError("nil identity certificate")
 	}
 	block, _ := pem.Decode(idBytes)
+	if block == nil {
+		return nil, errors.NewErrorf("invalid identity certificate: %s", string(idBytes))
+	}
 	return x509.ParseCertificate(block.Bytes)
 }
 
@@ -1103,6 +1108,9 @@ func (msp *mspImpl) deserializeIdentityInternal(certBytes []byte) (Identity, err
 }
 
 func (msp *mspImpl) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo) (SigningIdentity, error) {
+	if sidInfo == nil {
+		return nil, errors.NewError("nil signing identity info")
+	}
 	id, pk, err := msp.getIdentityFromCert(sidInfo.PublicSigner)
 	if err != nil {
 		return nil, err
@@ -1111,14 +1119,23 @@ func (msp *mspImpl) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo
 	sk, err := msp.csp.GetKey(pk.SKI())
 	if err != nil {
 		mspLogger.Debugf("Cannot find the private key against ski %x.", pk.SKI())
+		if sidInfo.PrivateSigner.KeyIdentifier != hex.EncodeToString(pk.SKI()) {
+			return nil, errors.NewErrorf("subject key identifier mismatches: \"%s\" <=> \"%s\"", sidInfo.PrivateSigner.KeyIdentifier, hex.EncodeToString(pk.SKI()))
+		}
 		if sidInfo.PrivateSigner == nil || sidInfo.PrivateSigner.KeyMaterial == nil {
 			return nil, errors.NewError("key material not found in SigningIdentityInfo")
 		}
 
 		block, _ := pem.Decode(sidInfo.PrivateSigner.KeyMaterial)
+		if block == nil {
+			return nil, errors.NewErrorf("invalid key material: %s", string(sidInfo.PrivateSigner.KeyMaterial))
+		}
 		sk, err = msp.csp.KeyImport(block.Bytes, &ecdsa.ECDSAPrivateKeyImportOpts{Temporary: true})
 		if err != nil {
 			return nil, err
+		}
+		if hex.EncodeToString(sk.SKI()) != hex.EncodeToString(pk.SKI()) {
+			return nil, errors.NewErrorf("subject key identifier mismatches: \"%s\" <=> \"%s\"", hex.EncodeToString(sk.SKI()), hex.EncodeToString(pk.SKI()))
 		}
 	}
 

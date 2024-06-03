@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
@@ -82,36 +84,6 @@ func TestSanitizeCert(t *testing.T) {
 	require.True(t, lowS)
 }
 
-func generateSelfSignedCert(t *testing.T, now time.Time) (*goecdsa.PrivateKey, *x509.Certificate) {
-	key, err := goecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-
-	template := x509.Certificate{
-		SerialNumber: big.NewInt(7911),
-		Subject: pkix.Name{
-			CommonName:   "love.home",
-			Organization: []string{"love.zone"},
-			Country:      []string{"CN"},
-		},
-		NotBefore:             now.Add(-1 * time.Hour),
-		NotAfter:              now.Add(time.Hour),
-		SignatureAlgorithm:    x509.ECDSAWithSHA256,
-		SubjectKeyId:          []byte{7, 9, 11},
-		KeyUsage:              x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
-	}
-
-	certRaw, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	require.NoError(t, err)
-
-	cert, err := x509.ParseCertificate(certRaw)
-	require.NoError(t, err)
-
-	return key, cert
-}
-
 func TestGenerateSampleConfigMsp(t *testing.T) {
 	writeFile := func(path string, content []byte) error {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.FileMode(0600))
@@ -166,4 +138,89 @@ func TestGenerateSampleConfigMsp(t *testing.T) {
 	require.NoError(t, err)
 	err = writeFile(filepath.Join(path, "tlsintermediatecerts/tlsintermediate.pem"), tlsIntermediate.CertBytes())
 	require.NoError(t, err)
+}
+
+func TestGenerateCRL(t *testing.T) {
+	generator := tlsca.NewTLSCAGenerator()
+	ca, err := generator.GenCA(&tlsca.TLSCAGenOpts{Level: 384})
+	require.NoError(t, err)
+	block, _ := pem.Decode(ca.CertBytes())
+	caCert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	require.NoError(t, err)
+	sk, err := utils.PEMToPrivateKey(ca.KeyBytes())
+	require.NoError(t, err)
+	template := &x509.RevocationList{
+		ThisUpdate: time.Now().Add(-1 * time.Hour),
+		NextUpdate: caCert.NotAfter,
+		Issuer:     caCert.Issuer,
+		Number:     serialNumber,
+	}
+	rl, err := x509.CreateRevocationList(rand.Reader, template, caCert, sk)
+	require.NoError(t, err)
+	_, err = x509.ParseRevocationList(rl)
+	require.NoError(t, err)
+	pemFormatRL := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: rl})
+	fmt.Println(string(pemFormatRL))
+}
+
+func generateSelfSignedCert(t *testing.T, now time.Time) (*goecdsa.PrivateKey, *x509.Certificate) {
+	k, err := goecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	// Generate a self-signed certificate
+	testExtKeyUsage := []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	testUnknownExtKeyUsage := []asn1.ObjectIdentifier{[]int{1, 2, 3}, []int{2, 59, 1}}
+	extraExtensionData := []byte("extra extension")
+	commonName := "test.example.com"
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName:   commonName,
+			Organization: []string{"PLA"},
+			Country:      []string{"CN"},
+			ExtraNames: []pkix.AttributeTypeAndValue{
+				{
+					Type:  []int{2, 5, 4, 42},
+					Value: "Gopher",
+				},
+				// This should override the Country, above.
+				{
+					Type:  []int{2, 5, 4, 6},
+					Value: "NL",
+				},
+			},
+		},
+		NotBefore:             now.Add(-1 * time.Hour),
+		NotAfter:              now.Add(1 * time.Hour),
+		SignatureAlgorithm:    x509.ECDSAWithSHA256,
+		SubjectKeyId:          []byte{1, 2, 3, 4},
+		KeyUsage:              x509.KeyUsageCertSign,
+		ExtKeyUsage:           testExtKeyUsage,
+		UnknownExtKeyUsage:    testUnknownExtKeyUsage,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		OCSPServer:            []string{"http://ocurrentCSP.example.com"},
+		IssuingCertificateURL: []string{"http://crt.example.com/ca1.crt"},
+		DNSNames:              []string{"test.example.com"},
+		EmailAddresses:        []string{"gopher@golang.org"},
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1).To4(), net.ParseIP("2001:4860:0:2001::68")},
+		PolicyIdentifiers:     []asn1.ObjectIdentifier{[]int{1, 2, 3}},
+		PermittedDNSDomains:   []string{".example.com", "example.com"},
+		CRLDistributionPoints: []string{"http://crl1.example.com/ca1.crl", "http://crl2.example.com/ca1.crl"},
+		ExtraExtensions: []pkix.Extension{
+			{
+				Id:    []int{1, 2, 3, 4},
+				Value: extraExtensionData,
+			},
+		},
+	}
+	certRaw, err := x509.CreateCertificate(rand.Reader, &template, &template, &k.PublicKey, k)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(certRaw)
+	require.NoError(t, err)
+
+	return k, cert
 }

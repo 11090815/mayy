@@ -103,7 +103,7 @@ func (id *identity) Anonymous() bool {
 }
 
 func (id *identity) Verify(msg []byte, signature []byte) error {
-	hashOpt, err := hash.GetHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
+	hashOpt, err := hash.GetHashOpt(id.msp.cryptoConfig.SignatureHashFunction)
 	if err != nil {
 		return errors.NewErrorf("failed verifying the signature, the error is \"%s\"", err.Error())
 	}
@@ -161,7 +161,7 @@ func newSigningIdentity(cert *x509.Certificate, pk csp.Key, signer crypto.Signer
 }
 
 func (sid *signingIdentity) Sign(msg []byte) ([]byte, error) {
-	hashOpt, err := hash.GetHashOpt(sid.msp.cryptoConfig.SignatureHashFamily)
+	hashOpt, err := hash.GetHashOpt(sid.msp.cryptoConfig.SignatureHashFunction)
 	if err != nil {
 		return nil, err
 	}

@@ -262,7 +262,7 @@ func getMspConfig(dir, id string, sigid *pmsp.SigningIdentityInfo) (*pmsp.MSPCon
 	}
 
 	cryptoConfig := &pmsp.MayyCryptoConfig{
-		SignatureHashFamily:            hash.SHA256,
+		SignatureHashFunction:            hash.SHA256,
 		IdentityIdentifierHashFunction: hash.SHA256,
 	}
 
