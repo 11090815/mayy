@@ -122,7 +122,7 @@ func (msp *mspImpl) GetVersion() MSPVersion {
 }
 
 func (msp *mspImpl) GetType() ProviderType {
-	return MAYY
+	return CSP
 }
 
 func (msp *mspImpl) GetIdentifier() string {
@@ -373,7 +373,7 @@ func (msp *mspImpl) getValidationChain(cert *x509.Certificate, isIntermediateCha
 	}
 	// 为 client、peer、admin 和 orderer 等 identity 签发证书的中级证书不应该存在于 certificationTreeInternalNodesMap 这里面。
 	if msp.certificationTreeInternalNodesMap[string(validationChain[intermediatePosition].Raw)] {
-		return nil, errors.NewErrorf("invalid validation chain, parent certificate should be a leaf of the certification tree")
+		return nil, errors.NewError("invalid validation chain, parent certificate should be a leaf of the certification tree")
 	}
 
 	return validationChain, nil
@@ -1118,7 +1118,7 @@ func (msp *mspImpl) getSigningIdentityFromConf(sidInfo *pmsp.SigningIdentityInfo
 
 	sk, err := msp.csp.GetKey(pk.SKI())
 	if err != nil {
-		mspLogger.Debugf("Cannot find the private key against ski %x.", pk.SKI())
+		mspLogger.Errorf("Cannot find the private key against ski %x.", pk.SKI())
 		if sidInfo.PrivateSigner.KeyIdentifier != hex.EncodeToString(pk.SKI()) {
 			return nil, errors.NewErrorf("subject key identifier mismatches: \"%s\" <=> \"%s\"", sidInfo.PrivateSigner.KeyIdentifier, hex.EncodeToString(pk.SKI()))
 		}

@@ -11,12 +11,12 @@ const (
 type ProviderType int
 
 const (
-	MAYY ProviderType = iota
+	CSP ProviderType = iota
 	OTHER
 )
 
 var mspTypeStrings = map[ProviderType]string{
-	MAYY:  "csp",
+	CSP:   "csp",
 	OTHER: "other",
 }
 
@@ -28,7 +28,7 @@ func ProviderTypeToString(id ProviderType) string {
 }
 
 var Options = map[string]NewOpts{
-	ProviderTypeToString(MAYY): &CSPNewOpts{Version: MSPv1_0},
+	ProviderTypeToString(CSP): &CSPNewOpts{Version: MSPv1_0},
 }
 
 /* ------------------------------------------------------------------------------------------ */

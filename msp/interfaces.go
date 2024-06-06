@@ -11,7 +11,7 @@ type MSPManager interface {
 
 	Setup(msps []MSP) error
 
-	GetMSPs() (map[string]MSP, error)
+	GetMSPs() map[string]MSP
 }
 
 type MSP interface {

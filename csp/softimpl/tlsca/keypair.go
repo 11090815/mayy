@@ -95,13 +95,13 @@ func newCertKeyPair(securityLevel int, isCA bool, isServer bool, signer crypto.S
 	if isCA {
 		template.IsCA = true
 		template.KeyUsage |= x509.KeyUsageCertSign | x509.KeyUsageCRLSign
-		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageAny}
 		// 通过判断 BasicConstraintsValid 字段的值，可以确定证书是否是一个 CA 证书，
 		// 以及是否可以继续签发其他证书。这对于验证和使用证书非常重要，可以确保证书的
 		// 正确性和安全性。
 		template.BasicConstraintsValid = true
 	} else {
-		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageAny}
 	}
 
 	if isServer {

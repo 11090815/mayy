@@ -40,6 +40,7 @@ func InitCSPFactoryWithOpts(opts *FactoryOpts) {
 		}
 		if opts.HashFamily != defaultFactory.opts.HashFamily {
 			defaultFactory.opts.HashFamily = opts.HashFamily
+			changed = true
 		}
 		if opts.KeyStorePath != defaultFactory.opts.KeyStorePath {
 			defaultFactory.opts.KeyStorePath = opts.KeyStorePath
@@ -47,9 +48,11 @@ func InitCSPFactoryWithOpts(opts *FactoryOpts) {
 		}
 		if opts.ReadOnly != defaultFactory.opts.ReadOnly {
 			defaultFactory.opts.ReadOnly = opts.ReadOnly
+			changed = true
 		}
 		if opts.SecurityLevel != defaultFactory.opts.SecurityLevel {
 			defaultFactory.opts.SecurityLevel = opts.SecurityLevel
+			changed = true
 		}
 		if changed {
 			_, exists := defaultFactory.csps[opts.Kind]

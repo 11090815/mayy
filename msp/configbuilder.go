@@ -126,7 +126,7 @@ func SetupCSPKeystoreConfig(cfg *factory.FactoryOpts, keystoreDir string) *facto
 // GetLocalMspConfigWithType 方法的第四个参数目前仅支持 "csp"。
 func GetLocalMspConfigWithType(dir string, cfg *factory.FactoryOpts, id, mspType string) (*pmsp.MSPConfig, error) {
 	switch mspType {
-	case ProviderTypeToString(MAYY):
+	case ProviderTypeToString(CSP):
 		return GetLocalMspConfig(dir, cfg, id)
 	default:
 		return nil, errors.NewErrorf("unknown MSP type \"%s\"", mspType)
@@ -137,7 +137,6 @@ func GetLocalMspConfig(dir string, cfg *factory.FactoryOpts, id string) (*pmsp.M
 	signcertDir := filepath.Join(dir, signcerts)
 	keystoreDir := filepath.Join(dir, keystore)
 	cfg = SetupCSPKeystoreConfig(cfg, keystoreDir)
-
 	factory.InitCSPFactoryWithOpts(cfg)
 
 	signCert, err := getPemMaterialFromDir(signcertDir)
@@ -153,7 +152,7 @@ func GetLocalMspConfig(dir string, cfg *factory.FactoryOpts, id string) (*pmsp.M
 // GetVerifyingMspConfig 方法的第三个参数目前仅支持 "csp"。
 func GetVerifyingMspConfig(dir, id, mspType string) (*pmsp.MSPConfig, error) {
 	switch mspType {
-	case ProviderTypeToString(MAYY):
+	case ProviderTypeToString(CSP):
 		return getMspConfig(dir, id, nil)
 	default:
 		return nil, errors.NewErrorf("unknown msp type: \"%s\"", mspType)
@@ -262,7 +261,7 @@ func getMspConfig(dir, id string, sigid *pmsp.SigningIdentityInfo) (*pmsp.MSPCon
 	}
 
 	cryptoConfig := &pmsp.MayyCryptoConfig{
-		SignatureHashFunction:            hash.SHA256,
+		SignatureHashFunction:          hash.SHA256,
 		IdentityIdentifierHashFunction: hash.SHA256,
 	}
 
@@ -285,7 +284,7 @@ func getMspConfig(dir, id string, sigid *pmsp.SigningIdentityInfo) (*pmsp.MSPCon
 		return nil, err
 	}
 
-	return &pmsp.MSPConfig{Config: raw, Type: int32(MAYY)}, nil
+	return &pmsp.MSPConfig{Config: raw, Type: int32(CSP)}, nil
 }
 
 func loadCertificateAt(dir, certificatePath string) []byte {
