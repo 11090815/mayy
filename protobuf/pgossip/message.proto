@@ -369,6 +369,11 @@ message PvtDataElement {
     repeated bytes payload = 2;
 }
 
+message PvtDataPayload {
+    uint64 tx_seq_in_block = 1;
+    bytes payload = 2;
+}
+
 // PullMsgType 指定了 Gossip 消息的类型。
 enum PullMsgType {
     // UNDEFINED 表示未定义的消息类型。

@@ -6,7 +6,9 @@ import (
 	"crypto/sha512"
 	"fmt"
 	"reflect"
+	"sync"
 
+	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl"
 	"github.com/11090815/mayy/csp/softimpl/aes"
@@ -19,7 +21,18 @@ import (
 )
 
 var (
-	defaultFactory *CSPFactory
+	defaultFactory      *CSPFactory
+	temporaryCSP        csp.CSP
+	getTemporaryCSPOnce sync.Once
+	logger              = mlog.GetLogger("csp", mlog.DebugLevel, true)
+
+	defaultFactoryOpts = &FactoryOpts{
+		Kind:          "sw",
+		KeyStorePath:  "/tmp/mayy/keystore",
+		SecurityLevel: 256,
+		HashFamily:    "SHA2",
+		ReadOnly:      false,
+	}
 )
 
 type CSPFactory struct {
@@ -69,7 +82,15 @@ func InitCSPFactoryWithOpts(opts *FactoryOpts) {
 
 func GetCSP() (csp.CSP, error) {
 	if defaultFactory.opts == nil {
-		return nil, errors.NewError("you should initialize the csp factory before calling this method")
+		logger.Warn("Before using CSP, please call InitCSPFactoryWithOpts(), falling back to temporary csp.")
+		getTemporaryCSPOnce.Do(func() {
+			var err error
+			temporaryCSP, err = createSoftBasedCSP(defaultFactoryOpts)
+			if err != nil {
+				panic(err)
+			}
+		})
+		return temporaryCSP, nil
 	}
 	switch defaultFactory.opts.Kind {
 	case "sw", "SW", "Sw", "sW":

@@ -128,6 +128,9 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 	}
 
 	// 设置保活选项
+	if serverConfig.KaOpts.IsServerNil() {
+		serverConfig.KaOpts = DefaultKeepaliveOptions
+	}
 	serverOptions = append(serverOptions, serverConfig.KaOpts.ServerKeepaliveOptions()...)
 
 	if serverConfig.ConnectionTimeout <= 0 {

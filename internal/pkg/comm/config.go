@@ -87,6 +87,20 @@ func (ko KeepaliveOptions) ClientKeepaliveOptions() []grpc.DialOption {
 	return clientOpts
 }
 
+func (ko KeepaliveOptions) IsServerNil() bool {
+	if ko.ServerInterval == 0 && ko.ServerTimeout == 0 && ko.ServerMinInterval == 0 {
+		return true
+	}
+	return false
+}
+
+func (ko KeepaliveOptions) IsClientNil() bool {
+	if ko.ClientInterval == 0 && ko.ClientTimeout == 0 {
+		return true
+	}
+	return false
+}
+
 /* ------------------------------------------------------------------------------------------ */
 
 // SecureOptions 定义了服务端和客户端的 TLS 安全参数。
