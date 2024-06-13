@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/hex"
+	"reflect"
 
 	"google.golang.org/grpc"
 )
@@ -47,3 +48,20 @@ type PeerSecureDialOpts func() []grpc.DialOption
 
 // PeerSuspector 检测 peer 的身份证书或者其上的 CA 证书是否被撤销。
 type PeerSuspector func(identity PeerIdentityType) bool
+
+/* ------------------------------------------------------------------------------------------ */
+
+// Equals 判断 a 和 b 是否相同。
+type Equals func(a, b any) bool
+
+// IndexInSlice 给定一个数组 array 和一个可能存在于 array 中的一个元素 o，
+// 返回 o 在 array 中的索引位置。
+func IndexInSlice(array any, o any, equals Equals) int {
+	arr := reflect.ValueOf(array)
+	for i := 0; i < arr.Len(); i++ {
+		if equals(arr.Index(i).Interface(), o) {
+			return i
+		}
+	}
+	return -1
+}

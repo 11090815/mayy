@@ -200,6 +200,7 @@ func (l *logger) Stop() error {
 	loggerBus.mutex.Lock()
 	loggerBus.isStopped = true
 	loggerBus.mutex.Unlock()
+	loggerBus.terminal.Close()
 	return loggerBus.file.Close()
 }
 

@@ -13,6 +13,10 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	entriesPoolSize = 1000
+)
+
 /* ------------------------------------------------------------------------------------------ */
 
 // writer 定义了条目写入器接口。
@@ -25,18 +29,42 @@ type writer interface {
 
 /* ------------------------------------------------------------------------------------------ */
 
-type terminalWriter struct{}
+type terminalWriter struct {
+	entriesPool chan *entry
+	stopCh      chan struct{}
+}
 
 func NewTerminalWriter() writer {
-	return &terminalWriter{}
+	writer := &terminalWriter{
+		entriesPool: make(chan *entry, entriesPoolSize),
+		stopCh:      make(chan struct{}),
+	}
+
+	go func() {
+		for {
+			select {
+			case <-writer.stopCh:
+				return
+			case e := <-writer.entriesPool:
+				os.Stdout.Write([]byte(e.ColorLevelString()))
+			}
+		}
+	}()
+
+	return writer
 }
 
-func (*terminalWriter) WriteEntry(e *entry) error {
-	_, err := os.Stdout.Write([]byte(e.ColorLevelString()))
-	return err
+func (writer *terminalWriter) WriteEntry(e *entry) error {
+	select {
+	case writer.entriesPool <- e:
+		return nil
+	default:
+		return errors.NewError("the logger buffer pool is full")
+	}
 }
 
-func (*terminalWriter) Close() error {
+func (writer *terminalWriter) Close() error {
+	close(writer.stopCh)
 	return nil
 }
 
@@ -249,7 +277,7 @@ func ReadConfig() (*fileWriterConfig, *viper.Viper, error) {
 
 /* ------------------------------------------------------------------------------------------ */
 
-type mockWriter struct {}
+type mockWriter struct{}
 
 func (mock *mockWriter) WriteEntry(*entry) error {
 	return nil
