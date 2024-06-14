@@ -43,6 +43,11 @@ type MessageReplacingPolicy func(this, that any) InfluenceResult
 
 /* ------------------------------------------------------------------------------------------ */
 
+// MessageAcceptor 是一个谓词，用于确定创建 MessageAcceptor 的订阅者对哪些消息感兴趣。
+type MessageAcceptor func(any) bool
+
+/* ------------------------------------------------------------------------------------------ */
+
 // PeerSecureDialOpts 返回 gRPC 拨号的安全选项。
 type PeerSecureDialOpts func() []grpc.DialOption
 
