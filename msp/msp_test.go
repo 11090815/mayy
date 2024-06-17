@@ -12,7 +12,7 @@ import (
 	"github.com/11090815/mayy/csp/factory"
 	"github.com/11090815/mayy/csp/mocks"
 	"github.com/11090815/mayy/csp/softimpl"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/protobuf/pmsp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"

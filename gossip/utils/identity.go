@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 )
 
 var usageThreshold = time.Hour

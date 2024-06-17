@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/11090815/mayy/core/config"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"github.com/spf13/viper"
 )
 

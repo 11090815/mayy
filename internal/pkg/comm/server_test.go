@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/11090815/mayy/common/mlog"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/internal/pkg/comm"
 	"github.com/11090815/mayy/internal/pkg/comm/testpb"
 	"github.com/stretchr/testify/require"

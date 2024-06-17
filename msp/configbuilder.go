@@ -7,7 +7,7 @@ import (
 
 	"github.com/11090815/mayy/csp/factory"
 	"github.com/11090815/mayy/csp/softimpl/hash"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/protobuf/pmsp"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"

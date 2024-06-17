@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 
 	"github.com/11090815/mayy/csp"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 )
 
 /* ------------------------------------------------------------------------------------------ */

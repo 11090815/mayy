@@ -13,7 +13,7 @@ import (
 	goecdsa "crypto/ecdsa"
 
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 )
 
 type validity struct {

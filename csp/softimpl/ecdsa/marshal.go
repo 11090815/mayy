@@ -12,7 +12,7 @@ import (
 	"encoding/asn1"
 	"math/big"
 
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 )
 
 /* ------------------------------------------------------------------------------------------ */

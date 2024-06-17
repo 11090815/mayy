@@ -4,7 +4,7 @@ import (
 	"crypto"
 
 	"github.com/11090815/mayy/csp"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 )
 
 type ca struct {

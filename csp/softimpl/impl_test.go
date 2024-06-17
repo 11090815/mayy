@@ -21,7 +21,7 @@ import (
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
 	"github.com/11090815/mayy/csp/softimpl/hash"
 	"github.com/11090815/mayy/csp/softimpl/tlsca"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/sha3"
 	"google.golang.org/grpc"

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/protobuf/pcommon"
 )
 

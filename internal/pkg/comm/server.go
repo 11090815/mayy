@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/11090815/mayy/common/metrics"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"

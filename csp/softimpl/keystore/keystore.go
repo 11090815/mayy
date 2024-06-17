@@ -11,7 +11,7 @@ import (
 	"github.com/11090815/mayy/csp/softimpl/aes"
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
 	"github.com/11090815/mayy/csp/softimpl/utils"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 )
 
 /* ------------------------------------------------------------------------------------------ */

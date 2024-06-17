@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/11090815/mayy/common/mlog"
-	"github.com/11090815/mayy/errors"
+	"github.com/11090815/mayy/common/errors"
 	"google.golang.org/grpc/credentials"
 )
 
