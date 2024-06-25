@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -231,7 +232,7 @@ func generateCertificateOrPanic() tls.Certificate {
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		SerialNumber: sn,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		NotAfter: time.Now().Add(time.Hour * 24),
+		NotAfter:     time.Now().Add(time.Hour * 24),
 	}
 	rawBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
 	if err != nil {
@@ -401,4 +402,268 @@ func TestHandshake2(t *testing.T) {
 	acceptChan = handshaker(t, port, tempEndpoint, comm, mutator, mutualTLS)
 	time.Sleep(time.Second)
 	require.Equal(t, 0, len(acceptChan))
+}
+
+func TestConnectUnexpectedPeer(t *testing.T) {
+	identityByPort := func(port int) utils.PeerIdentityType {
+		return utils.PeerIdentityType(fmt.Sprintf("127.0.0.1:%d", port))
+	}
+
+	customSP := &mockSecProvider{SecurityAdvisor: mocks.SecurityAdvisor{}}
+
+	comm1Port, gRPCServer1, certs1, secureDialOpts1, dialOpts1 := utils.CreateGRPCLayer()
+	comm2Port, gRPCServer2, certs2, secureDialOpts2, dialOpts2 := utils.CreateGRPCLayer()
+	comm3Port, gRPCServer3, certs3, secureDialOpts3, dialOpts3 := utils.CreateGRPCLayer()
+	comm4Port, gRPCServer4, certs4, secureDialOpts4, dialOpts4 := utils.CreateGRPCLayer()
+
+	customSP.SecurityAdvisor.On("OrgByPeerIdentity", identityByPort(comm1Port)).Return(utils.OrgIdentityType("org1"))
+	customSP.SecurityAdvisor.On("OrgByPeerIdentity", identityByPort(comm2Port)).Return(utils.OrgIdentityType("org2"))
+	customSP.SecurityAdvisor.On("OrgByPeerIdentity", identityByPort(comm3Port)).Return(utils.OrgIdentityType("org3"))
+	customSP.SecurityAdvisor.On("OrgByPeerIdentity", identityByPort(comm4Port)).Return(utils.OrgIdentityType("org2"))
+
+	comm1 := newCommInstanceOnly(t, customSP, gRPCServer1, certs1, secureDialOpts1, dialOpts1...)
+	comm2 := newCommInstanceOnly(t, mockSP, gRPCServer2, certs2, secureDialOpts2, dialOpts2...)
+	comm3 := newCommInstanceOnly(t, mockSP, gRPCServer3, certs3, secureDialOpts3, dialOpts3...)
+	comm4 := newCommInstanceOnly(t, mockSP, gRPCServer4, certs4, secureDialOpts4, dialOpts4...)
+
+	defer comm1.Stop()
+	defer comm2.Stop()
+	defer comm3.Stop()
+	defer comm4.Stop()
+
+	time.Sleep(time.Second)
+
+	messagesForComm1 := comm1.Accept(acceptAll)
+	messagesForComm2 := comm2.Accept(acceptAll)
+	messagesForComm3 := comm3.Accept(acceptAll)
+
+	comm4.Send(createGossipMsg(), remotePeer(comm1Port))
+	<-messagesForComm1
+	comm1.CloseConn(remotePeer(comm4Port))
+	time.Sleep(time.Second)
+
+	t.Run("Same org", func(t *testing.T) {
+		unexpectedRemotePeer := remotePeer(comm2Port)
+		unexpectedRemotePeer.PKIID = remotePeer(comm4Port).PKIID
+		comm1.Send(createGossipMsg(), unexpectedRemotePeer)
+		select {
+		case <-messagesForComm2:
+		case <-time.After(time.Second * 5):
+			require.Fail(t, "Didn't receive a message within a timely manner")
+		}
+	})
+
+	t.Run("Unexpected org", func(t *testing.T) {
+		unexpectedRemotePeer := remotePeer(comm3Port)
+		unexpectedRemotePeer.PKIID = remotePeer(comm4Port).PKIID
+		comm1.Send(createGossipMsg(), unexpectedRemotePeer)
+		select {
+		case <-messagesForComm3:
+			require.Fail(t, "Shouldn't receive message.")
+		case <-time.After(time.Second * 5):
+		}
+	})
+}
+
+func TestCloseConn(t *testing.T) {
+	comm1, port1 := newCommInstance(t, mockSP)
+	defer comm1.Stop()
+	acceptChan := comm1.Accept(acceptAll)
+	cert := generateCertificateOrPanic()
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{cert},
+	}
+	ta := credentials.NewTLS(tlsCfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	target := fmt.Sprintf("127.0.0.1:%d", port1)
+	conn, err := grpc.DialContext(ctx, target, grpc.WithTransportCredentials(ta), grpc.WithBlock())
+	require.NoError(t, err)
+	client := pgossip.NewGossipClient(conn)
+	stream, err := client.GossipStream(context.Background())
+	require.NoError(t, err)
+
+	tlsCertHash := certHashFromRawCert(tlsCfg.Certificates[0].Certificate[0])
+	connMsg, err := createConnectionMsg(utils.PKIidType("id"), tlsCertHash, utils.PeerIdentityType("id"), signer, false)
+	require.NoError(t, err)
+	stream.Send(connMsg.Envelope)
+	stream.Send(createGossipMsg().Envelope)
+	select {
+	case <-acceptChan:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't receive a message within a timely manner")
+	}
+	comm1.CloseConn(&RemotePeer{PKIID: utils.PKIidType("id")})
+	time.Sleep(time.Second * 1)
+	gotErr := false
+	msg2Send := createGossipMsg()
+	msg2Send.GetDataMsg().Payload = &pgossip.Payload{
+		Data: make([]byte, 1024*1024),
+	}
+	protoext.NoopSign(msg2Send.GossipMessage)
+	for i := 0; i < DefaultRecvBuffSize; i++ {
+		err := stream.Send(msg2Send.Envelope)
+		if err != nil {
+			gotErr = true
+			break
+		}
+	}
+	require.True(t, gotErr)
+}
+
+func TestCommSend(t *testing.T) {
+	sendMessages := func(c Comm, peer *RemotePeer, stopCh <-chan struct{}) {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			msg := createGossipMsg()
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				c.Send(msg, peer)
+			}
+		}
+	}
+
+	comm1, port1 := newCommInstance(t, mockSP)
+	comm2, port2 := newCommInstance(t, mockSP)
+	defer comm1.Stop()
+	defer comm2.Stop()
+
+	err := comm1.Probe(remotePeer(port2))
+	t.Logf("err [%v]", err)
+
+	ch1 := comm1.Accept(acceptAll)
+	ch2 := comm2.Accept(acceptAll)
+
+	stopCh1 := make(chan struct{})
+	stopCh2 := make(chan struct{})
+
+	go sendMessages(comm1, remotePeer(port2), stopCh1)
+	go sendMessages(comm2, remotePeer(port1), stopCh2)
+
+	c1received := 0
+	c2received := 0
+
+	totalMessagesReceived := (DefaultRecvBuffSize + DefaultSendBuffSize) * 2
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+
+RECV:
+	for {
+		select {
+		case <-ch1:
+			c1received++
+			if c1received == totalMessagesReceived {
+				close(stopCh2)
+			}
+		case <-ch2:
+			c2received++
+			if c2received == totalMessagesReceived {
+				close(stopCh1)
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for messages to be received")
+		default:
+			if c1received >= totalMessagesReceived && c2received >= totalMessagesReceived {
+				break RECV
+			}
+		}
+	}
+
+	t.Logf("c1 got %d messages, c2 got %d messages", c1received, c2received)
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type nonResponsivePeer struct {
+	*grpc.Server
+	port int
+}
+
+func newNonResponsivePeer(t *testing.T) *nonResponsivePeer {
+	port, gRPCServer, _, _, _ := utils.CreateGRPCLayer()
+	nrp := &nonResponsivePeer{
+		Server: gRPCServer.Server(),
+		port:   port,
+	}
+	pgossip.RegisterGossipServer(gRPCServer.Server(), nrp)
+	go gRPCServer.Start()
+	return nrp
+}
+
+func (nrp *nonResponsivePeer) Ping(context.Context, *pgossip.Empty) (*pgossip.Empty, error) {
+	time.Sleep(time.Second * 15) // 故意延迟，不及时响应
+	return &pgossip.Empty{}, nil
+}
+
+func (nrp *nonResponsivePeer) GossipStream(stream pgossip.Gossip_GossipStreamServer) error {
+	return nil
+}
+
+func (nrp *nonResponsivePeer) stop() {
+	nrp.Server.Stop()
+}
+
+func TestNonResponsivePing(t *testing.T) {
+	c, _ := newCommInstance(t, mockSP)
+	defer c.Stop()
+	nrp := newNonResponsivePeer(t)
+	defer nrp.stop()
+	s := make(chan struct{})
+	go func() {
+		err := c.Probe(remotePeer(nrp.port))
+		t.Logf("err [%v]", err)
+		s <- struct{}{}
+	}()
+	select {
+	case <-time.After(time.Second * 10):
+		require.Fail(t, "Request wasn't cancelled on time")
+	case <-s:
+	}
+}
+
+func TestResponses(t *testing.T) {
+	comm1, port1 := newCommInstance(t, mockSP)
+	comm2, _ := newCommInstance(t, mockSP)
+	defer comm1.Stop()
+	defer comm2.Stop()
+
+	wg := sync.WaitGroup{}
+
+	msg := createGossipMsg()
+	wg.Add(1)
+	go func() {
+		ch1 := comm1.Accept(acceptAll)
+		wg.Done()
+		for m := range ch1 {
+			reply := createGossipMsg()
+			reply.Nonce = m.GetGossipMessage().Nonce + 1
+			m.Respond(reply.GossipMessage)
+		}
+	}()
+	expectedNonce := msg.Nonce + 1
+	ch2 := comm2.Accept(acceptAll)
+	timer := time.NewTimer(10 * time.Second)
+	wg.Wait()
+	comm2.Send(msg, remotePeer(port1))
+
+	select {
+	case <-timer.C:
+		require.Fail(t, "Haven't got response from comm1 within a timely manner")
+	case resp := <-ch2:
+		require.Equal(t, expectedNonce, resp.GetGossipMessage().Nonce)
+	}
+}
+
+func TestAccept(t *testing.T) {
+	comm1, port1 := newCommInstance(t, mockSP)
+	comm2, _ := newCommInstance(t, mockSP)
+
+	evenNONCESelector := func(m any) bool {
+		return m.(protoext.ReceivedMessage).GetGossipMessage().Nonce%2 == 0
+	}
 }

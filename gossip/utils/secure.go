@@ -30,6 +30,13 @@ func (id PKIidType) IsNotSameFilter(that PKIidType) bool {
 
 type OrgIdentityType []byte
 
+func (o OrgIdentityType) String() string {
+	if len(o) == 0 {
+		return "<nil org-id>"
+	}
+	return hex.EncodeToString(o)
+}
+
 type PeerIdentityInfo struct {
 	PKIid        PKIidType
 	Identity     PeerIdentityType

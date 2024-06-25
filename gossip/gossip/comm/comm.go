@@ -267,6 +267,7 @@ func (c *commImpl) Send(msg *protoext.SignedGossipMessage, peers ...*RemotePeer)
 	for _, peer := range peers {
 		go func(peer *RemotePeer, msg *protoext.SignedGossipMessage) {
 			c.sendToEndpoint(peer, msg, nonBlockingSend)
+			c.logger.Debugf("Send message %s to peer %s@%s.", msg.String(), peer.PKIID.String(), peer.Endpoint)
 		}(peer, msg)
 	}
 }
@@ -470,7 +471,7 @@ func (c *commImpl) createConnection(endpoint string, expectedPKIID utils.PKIidTy
 				expectedIdentity, _ := c.idMapper.Get(expectedPKIID)
 				oldOrg := c.sa.OrgByPeerIdentity(expectedIdentity)
 				if !bytes.Equal(actualOrg, oldOrg) {
-					c.logger.Warnf("Remote peer claims to be a different peer, expected pki-id is %s, but got %s.", expectedPKIID.String(), pkiID.String())
+					c.logger.Warnf("Remote peer claims to be from a different organization, should be from %s, but actually from %s.", oldOrg.String(), actualOrg.String())
 					cc.Close()
 					cancel()
 					return nil, errors.NewError("authentication failure")
