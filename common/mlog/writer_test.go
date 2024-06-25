@@ -9,16 +9,16 @@ import (
 
 func createRandomEntry() *entry {
 	r := rand.Intn(5)
-	return newEntry(now(), "consensus", level(r+1), "Successfully reach consensus among the whole network", "ip=192.168.1.1", true)
+	return newEntry(now(), "consensus", Level(r+1), "Successfully reach consensus among the whole network", "ip=192.168.1.1", true)
 }
 
 func TestFileWriter(t *testing.T) {
 	mfw, err := NewMultiFileWriter()
 	require.NoError(t, err)
 	for i := 0; i < 1000; i++ {
-		mfw.WriteEntry(createRandomEntry())
+		mfw.writeEntry(createRandomEntry())
 	}
-	err = mfw.Close()
+	err = mfw.close()
 	require.NoError(t, err)
 }
 

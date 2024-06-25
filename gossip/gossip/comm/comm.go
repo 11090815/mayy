@@ -1,12 +1,38 @@
 package comm
 
 import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/11090815/mayy/common/errors"
+	"github.com/11090815/mayy/common/mlog"
+	commonutils "github.com/11090815/mayy/common/utils"
+	"github.com/11090815/mayy/gossip/metrics"
 	"github.com/11090815/mayy/gossip/protoext"
 	"github.com/11090815/mayy/gossip/utils"
+	"github.com/11090815/mayy/protobuf/pgossip"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
+)
+
+const (
+	handshakeTimeout    = time.Second * 10
+	DefaultDialTimeout  = time.Second * 3
+	DefaultConnTimeout  = time.Second * 2
+	DefaultRecvBuffSize = 20
+	DefaultSendBuffSize = 20
+)
+
+var (
+	errProbe = fmt.Errorf("probe")
 )
 
 type Comm interface {
@@ -37,6 +63,13 @@ type Comm interface {
 	CloseConn(peer *RemotePeer)
 
 	Stop()
+}
+
+type CommConfig struct {
+	DialTimeout  time.Duration // 建立拨号连接的超时时间
+	ConnTimeout  time.Duration // 发送消息的超时时间
+	RecvBuffSize int           // 消息接收池所能存放消息的条数
+	SendBuffSize int           // 消息发送池所能发送消息的条数
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -100,4 +133,588 @@ func (asr AggregatedSendResult) String() string {
 	}
 	bz, _ := json.Marshal(output)
 	return string(bz)
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type commImpl struct {
+	sa           utils.SecurityAdvisor
+	tlsCerts     *utils.TLSCertificates
+	pubsub       *utils.PubSub
+	peerIdentity utils.PeerIdentityType
+	PKIID        utils.PKIidType
+	idMapper     utils.IdentityMapper
+	logger       mlog.Logger
+
+	// 主动建立 grpc 连接时所使用的参数
+	dialTimeout    time.Duration // 拨号建立连接的超时时间
+	opts           []grpc.DialOption
+	secureDialOpts utils.PeerSecureDialOpts
+	connTimeout    time.Duration // 发送消息的超时时间
+
+	connStore       *connStore
+	deadEndpoints   chan utils.PKIidType
+	identityChanges chan utils.PKIidType
+	msgPublisher    *ChannelDeMultiplexer
+	exitCh          chan struct{}
+	stopWg          sync.WaitGroup
+	subscriptions   []chan protoext.ReceivedMessage
+	stopping        int32
+	metrics         *metrics.CommMetrics
+
+	recvBuffSize int
+	sendBuffSize int
+	mutex        *sync.Mutex
+}
+
+func NewCommInstance(s *grpc.Server, certs *utils.TLSCertificates, idStore utils.IdentityMapper, identity utils.PeerIdentityType, logger mlog.Logger,
+	secureDialOpts utils.PeerSecureDialOpts, sa utils.SecurityAdvisor, metrics *metrics.CommMetrics, config CommConfig, dialOpts ...grpc.DialOption) (Comm, error) {
+	inst := &commImpl{
+		sa:              sa,
+		tlsCerts:        certs,
+		pubsub:          utils.NewPubSub(),
+		peerIdentity:    identity,
+		PKIID:           idStore.GetPKIidOfCert(identity),
+		idMapper:        idStore,
+		logger:          logger,
+		dialTimeout:     config.DialTimeout,
+		opts:            dialOpts,
+		secureDialOpts:  secureDialOpts,
+		connTimeout:     config.ConnTimeout,
+		deadEndpoints:   make(chan utils.PKIidType, 100),
+		identityChanges: make(chan utils.PKIidType, 10),
+		msgPublisher:    NewChannelDeMultiplexer(),
+		exitCh:          make(chan struct{}),
+		stopWg:          sync.WaitGroup{},
+		subscriptions:   make([]chan protoext.ReceivedMessage, 0),
+		stopping:        0,
+		metrics:         metrics,
+		recvBuffSize:    config.RecvBuffSize,
+		sendBuffSize:    config.SendBuffSize,
+		mutex:           &sync.Mutex{},
+	}
+
+	connConfig := ConnConfig{
+		RecvBuffSize: config.RecvBuffSize,
+		SendBuffSize: config.SendBuffSize,
+	}
+
+	inst.connStore = newConnStore(inst, logger, connConfig)
+
+	pgossip.RegisterGossipServer(s, inst)
+
+	return inst, nil
+}
+
+func (c *commImpl) Probe(peer *RemotePeer) error {
+	c.logger.Debugf("Probing peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
+	if c.isStopping() {
+		return errors.NewError("comm instance is already closed")
+	}
+	var dialOpts []grpc.DialOption
+	dialOpts = append(dialOpts, c.secureDialOpts()...)
+	dialOpts = append(dialOpts, c.opts...)
+	dialOpts = append(dialOpts, grpc.WithBlock())
+	ctx, cancel := context.WithTimeout(context.Background(), c.dialTimeout)
+	defer cancel()
+	cc, err := grpc.DialContext(ctx, peer.Endpoint, dialOpts...)
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+	client := pgossip.NewGossipClient(cc)
+	ctx, cancel = context.WithTimeout(context.Background(), c.connTimeout)
+	defer cancel()
+	_, err = client.Ping(ctx, &pgossip.Empty{})
+	return err
+}
+
+func (c *commImpl) Handshake(peer *RemotePeer) (utils.PeerIdentityType, error) {
+	c.logger.Debugf("Trying to handshake with peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
+	var dialOpts []grpc.DialOption
+	dialOpts = append(dialOpts, c.secureDialOpts()...)
+	dialOpts = append(dialOpts, c.opts...)
+	dialOpts = append(dialOpts, grpc.WithBlock())
+	ctx, cancel := context.WithTimeout(context.Background(), c.dialTimeout)
+	defer cancel()
+	cc, err := grpc.DialContext(ctx, peer.Endpoint, dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+	defer cc.Close()
+
+	client := pgossip.NewGossipClient(cc)
+	ctx, cancel = context.WithTimeout(context.Background(), handshakeTimeout)
+	defer cancel()
+	stream, err := client.GossipStream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	info, err := c.authenticateRemotePeer(stream, true, true)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(peer.PKIID, info.ID) {
+		return nil, errors.NewErrorf("remote peer claims to be a different peer, expected pki-id is %s, but got %s.", peer.PKIID.String(), hex.EncodeToString(info.ID))
+	}
+	return info.Identity, nil
+}
+
+func (c *commImpl) Send(msg *protoext.SignedGossipMessage, peers ...*RemotePeer) {
+	if c.isStopping() || len(peers) == 0 {
+		return
+	}
+	for _, peer := range peers {
+		go func(peer *RemotePeer, msg *protoext.SignedGossipMessage) {
+			c.sendToEndpoint(peer, msg, nonBlockingSend)
+		}(peer, msg)
+	}
+}
+
+func (c *commImpl) SendWithAck(msg *protoext.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*RemotePeer) AggregatedSendResult {
+	if len(peers) == 0 {
+		return nil
+	}
+
+	c.logger.Debugf("Prepare to send message %s to %d peer(s), and will wait for at least %d acknowledgement(s).", msg.String(), len(peers), minAck)
+
+	var err error
+	msg.Nonce = utils.RandomUint64()
+	msg, err = protoext.NoopSign(msg.GossipMessage)
+	if c.isStopping() || err != nil {
+		if err == nil {
+			err = errors.NewError("comm instance is already closed")
+		}
+		results := []SendResult{}
+		for _, peer := range peers {
+			results = append(results, SendResult{result: err.Error(), RemotePeer: RemotePeer{Endpoint: peer.Endpoint, PKIID: peer.PKIID}})
+		}
+		return results
+	}
+
+	subscriptions := make(map[string]func() error)
+	for _, p := range peers {
+		topic := topicForAck(msg.Nonce, p.PKIID)
+		subscription := c.pubsub.Subscribe(topic, timeout)
+		subscriptions[p.PKIID.String()] = func() error {
+			msg, err := subscription.Listen()
+			if err != nil {
+				return err
+			}
+			if msg, ok := msg.(*pgossip.Acknowledgement); !ok {
+				return errors.NewErrorf("expected *Acknowledgement, but got %T", msg)
+			} else {
+				if msg.Error != "" {
+					return errors.NewError(msg.Error)
+				}
+			}
+			return nil
+		}
+	}
+
+	waitForAck := func(peer *RemotePeer) error {
+		return subscriptions[peer.PKIID.String()]()
+	}
+	send := func(peer *RemotePeer, msg *protoext.SignedGossipMessage) {
+		c.sendToEndpoint(peer, msg, blockingSend)
+	}
+	ackOperation := newAckSendOperation(send, waitForAck)
+	return ackOperation.send(msg, minAck, peers...)
+}
+
+func (c *commImpl) Accept(acceptor utils.MessageAcceptor) <-chan protoext.ReceivedMessage {
+	genericChan := c.msgPublisher.AddChannel(acceptor)
+	specificChan := make(chan protoext.ReceivedMessage, 10)
+
+	if c.isStopping() {
+		return specificChan
+	}
+
+	c.mutex.Lock()
+	c.subscriptions = append(c.subscriptions, specificChan)
+	c.mutex.Unlock()
+
+	c.stopWg.Add(1)
+	go func() {
+		defer c.stopWg.Done()
+		for {
+			select {
+			case msg, channelOpen := <-genericChan:
+				if !channelOpen {
+					return
+				}
+				select {
+				case specificChan <- msg.(*ReceivedMessageImpl):
+				case <-c.exitCh:
+					return
+				}
+			case <-c.exitCh:
+				return
+			}
+		}
+	}()
+	return specificChan
+}
+
+func (c *commImpl) PresumedDead() <-chan utils.PKIidType {
+	return c.deadEndpoints
+}
+
+func (c *commImpl) IdentitySwitch() <-chan utils.PKIidType {
+	return c.identityChanges
+}
+
+func (c *commImpl) CloseConn(peer *RemotePeer) {
+	c.disconnect(peer.PKIID)
+}
+
+func (c *commImpl) GetPKIid() utils.PKIidType {
+	return c.PKIID
+}
+
+// GossipStream 当别人主动与我们建立连接时，底层的 gRPC 会将建立的连接数据流 stream 传给此方法，然后我们基于
+// GossipStream 方法的逻辑验证对等方的身份，并且将它包装成我们的连接存储下来。
+func (c *commImpl) GossipStream(stream pgossip.Gossip_GossipStreamServer) error {
+	if c.isStopping() {
+		return errors.NewError("comm instance is already closed")
+	}
+	connInfo, err := c.authenticateRemotePeer(stream, false, false)
+	if err == errProbe {
+		c.logger.Infof("Peer %s@%s probed us.", connInfo.ID.String(), connInfo.Endpoint)
+		return nil
+	}
+
+	if err != nil {
+		c.logger.Errorf("Failed authenticating the other peer, because %s.", err.Error())
+		return err
+	}
+
+	c.logger.Debugf("Start servicing peer %s@%s.", connInfo.ID.String(), connInfo.Endpoint)
+	conn := c.connStore.onConnected(stream, connInfo, c.metrics)
+	h := func(msg *protoext.SignedGossipMessage) {
+		c.msgPublisher.DeMultiplex(&ReceivedMessageImpl{
+			conn:                conn,
+			SignedGossipMessage: msg,
+			connInfo:            connInfo,
+		})
+	}
+	conn.handler = interceptAcks(h, connInfo.ID, c.pubsub)
+	defer func() {
+		c.logger.Debugf("Disconnect from client %s@%s.", connInfo.ID.String(), connInfo.Endpoint)
+		c.connStore.closeConnByPKIid(conn.pkiID)
+	}()
+
+	return conn.serviceConnection()
+}
+
+func (c *commImpl) Ping(context.Context, *pgossip.Empty) (*pgossip.Empty, error) {
+	return &pgossip.Empty{}, nil
+}
+
+func (c *commImpl) Stop() {
+	if !atomic.CompareAndSwapInt32(&c.stopping, 0, 1) {
+		return
+	}
+
+	c.logger.Info("Stopping comm instance.")
+	c.connStore.shutdown()
+	c.msgPublisher.Close()
+	c.idMapper.Stop()
+	close(c.exitCh)
+	c.stopWg.Wait()
+	c.closeSubscriptions()
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+func (c *commImpl) createConnection(endpoint string, expectedPKIID utils.PKIidType) (*connection, error) {
+	var dialOpts []grpc.DialOption
+	var cc *grpc.ClientConn
+	var err error
+	var connInfo *protoext.ConnectionInfo
+	var stream pgossip.Gossip_GossipStreamClient
+
+	if c.isStopping() {
+		return nil, errors.NewErrorf("failed to create connection to %s@%s, because the comm instance is closed", expectedPKIID.String(), endpoint)
+	}
+	c.logger.Debugf("Try to create a connection to %s@%s.", expectedPKIID.String(), endpoint)
+
+	// 1. 建立连接
+	dialOpts = append(dialOpts, c.secureDialOpts()...)
+	dialOpts = append(dialOpts, grpc.WithBlock())
+	dialOpts = append(dialOpts, c.opts...)
+	ctx, cancel := context.WithTimeout(context.Background(), c.dialTimeout)
+	defer cancel()
+	cc, err = grpc.DialContext(ctx, endpoint, dialOpts...)
+	if err != nil {
+		return nil, errors.NewErrorf("failed to create connection to %s@%s, error: %s", expectedPKIID.String(), endpoint, err.Error())
+	}
+
+	// 2. 测试网络连通性
+	client := pgossip.NewGossipClient(cc)
+	ctx, cancel = context.WithTimeout(context.Background(), c.connTimeout)
+	defer cancel()
+	if _, err = client.Ping(ctx, &pgossip.Empty{}); err != nil {
+		cc.Close()
+		return nil, err
+	}
+
+	// 3. 身份认证
+	ctx, cancel = context.WithCancel(context.Background())
+	if stream, err = client.GossipStream(ctx); err == nil {
+		connInfo, err = c.authenticateRemotePeer(stream, true, false)
+		if err == nil {
+			pkiID := connInfo.ID
+			if len(expectedPKIID) != 0 && !bytes.Equal(expectedPKIID, pkiID) {
+				actualOrg := c.sa.OrgByPeerIdentity(connInfo.Identity)
+				expectedIdentity, _ := c.idMapper.Get(expectedPKIID)
+				oldOrg := c.sa.OrgByPeerIdentity(expectedIdentity)
+				if !bytes.Equal(actualOrg, oldOrg) {
+					c.logger.Warnf("Remote peer claims to be a different peer, expected pki-id is %s, but got %s.", expectedPKIID.String(), pkiID.String())
+					cc.Close()
+					cancel()
+					return nil, errors.NewError("authentication failure")
+				} else {
+					c.logger.Infof("Peer from %s changed its PKI-ID from %s to %s.", endpoint, expectedPKIID.String(), pkiID.String())
+					c.identityChanges <- expectedPKIID
+				}
+			}
+			connConfig := ConnConfig{
+				RecvBuffSize: c.recvBuffSize,
+				SendBuffSize: c.sendBuffSize,
+			}
+			conn := newConnection(client, cc, stream, c.metrics, connConfig)
+			conn.pkiID = pkiID
+			conn.info = connInfo
+			conn.logger = c.logger
+			conn.cancel = cancel
+
+			var h handler = func(message *protoext.SignedGossipMessage) {
+				c.msgPublisher.DeMultiplex(&ReceivedMessageImpl{
+					conn:                conn,
+					connInfo:            connInfo,
+					SignedGossipMessage: message,
+				})
+			}
+			conn.handler = interceptAcks(h, pkiID, c.pubsub)
+			return conn, nil
+		}
+		c.logger.Errorf("Authentication failed, error: %s.", err.Error())
+	}
+	cc.Close()
+	cancel()
+	return nil, err
+}
+
+func (c *commImpl) authenticateRemotePeer(stream stream, initiator, isProbe bool) (*protoext.ConnectionInfo, error) {
+	ctx := stream.Context()
+	remoteAddress := extractRemoteAddress(stream)
+	remoteCertHash := extractCertificateHashFromContext(ctx) // TODO 对方的证书什么时候存起来的？
+	useTLS := c.tlsCerts != nil
+	var selfCertHash []byte
+	c.logger.Debugf("Start authenticating peer (%s).", remoteAddress)
+	defer c.logger.Debugf("Finish authenticating peer (%s).", remoteAddress)
+
+	if useTLS {
+		certReference := c.tlsCerts.TLSServerCert
+		if initiator { // 如果是验证过程的发起者，代表我主动连接对方的 server 端
+			certReference = c.tlsCerts.TLSClientCert
+		}
+		selfCertHash = certHashFromRawCert(certReference.Load().(*tls.Certificate).Certificate[0])
+	}
+
+	signer := func(msg []byte) ([]byte, error) {
+		return c.idMapper.Sign(msg)
+	}
+
+	if useTLS && len(remoteCertHash) == 0 {
+		c.logger.Errorf("Peer %s didn't send TLS certificate.", remoteAddress)
+		return nil, errors.NewError("failed authenticating TLS certificate")
+	}
+
+	connMsg, err := createConnectionMsg(c.PKIID, selfCertHash, c.peerIdentity, signer, isProbe)
+	if err != nil {
+		return nil, err
+	}
+	c.logger.Debugf("Send my connection information %s to %s.", protoext.ConnEstablishToString(connMsg.GetConnEstablish()), remoteAddress)
+	stream.Send(connMsg.Envelope)
+	m, err := readWithTimeout(stream, c.connTimeout, remoteAddress)
+	if err != nil {
+		c.logger.Errorf("Failed reading message from %s, error: %s.", remoteAddress, err.Error())
+		return nil, err
+	}
+	receivedMsg := m.GetConnEstablish()
+	if receivedMsg == nil {
+		c.logger.Errorf("Expected getting ConnEstablish message, but got %T.", m.Content)
+		return nil, errors.NewErrorf("expected getting ConnEstablish message, but got %T.", m.Content)
+	}
+
+	if receivedMsg.PkiId == nil {
+		c.logger.Errorf("Peer from %s didn't send his/her pki-id.", remoteAddress)
+		return nil, errors.NewError("no pki-id")
+	}
+
+	c.logger.Debugf("Receive connection information %s from %s@%s.", protoext.ConnEstablishToString(receivedMsg), hex.EncodeToString(receivedMsg.PkiId), remoteAddress)
+	if err = c.idMapper.Put(receivedMsg.PkiId, receivedMsg.Identity); err != nil {
+		c.logger.Errorf("Identity store rejected storing identity from %s, error: %s.", remoteAddress, err.Error())
+		return nil, err
+	}
+
+	connInfo := &protoext.ConnectionInfo{
+		ID:       receivedMsg.PkiId,
+		Identity: receivedMsg.Identity,
+		Endpoint: remoteAddress,
+		Auth: &protoext.AuthInfo{
+			SignedData: m.Payload,
+			Signature:  m.Signature,
+		},
+	}
+
+	if useTLS {
+		if !bytes.Equal(remoteCertHash, receivedMsg.TlsCertHash) {
+			return nil, errors.NewErrorf("expected %s in remote hash of TLS cert, but got %s.", hex.EncodeToString(remoteCertHash), hex.EncodeToString(receivedMsg.TlsCertHash))
+		}
+	}
+
+	verifier := func(peerIdentity []byte, signature, message []byte) error {
+		pkiID := c.idMapper.GetPKIidOfCert(peerIdentity)
+		return c.idMapper.Verify(pkiID, signature, message)
+	}
+	if err = m.Verify(receivedMsg.Identity, verifier); err != nil {
+		c.logger.Errorf("Failed verifying signature from %s@%s.", hex.EncodeToString(receivedMsg.PkiId), remoteAddress)
+		return nil, err
+	}
+
+	if receivedMsg.Probe {
+		return connInfo, errProbe
+	}
+
+	return connInfo, nil
+}
+
+func (c *commImpl) closeSubscriptions() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	for _, ch := range c.subscriptions {
+		close(ch)
+	}
+}
+
+func (c *commImpl) sendToEndpoint(peer *RemotePeer, msg *protoext.SignedGossipMessage, shouldBlock blockingBehavior) {
+	if c.isStopping() {
+		return
+	}
+
+	conn, err := c.connStore.getConnection(peer)
+	if err != nil {
+		c.logger.Errorf("Failed to send message to %s@%s, error: %s.", peer.PKIID.String(), peer.Endpoint, err.Error())
+		return
+	} else {
+		onErr := func(err error) {
+			c.logger.Errorf("Failed to send message to %s@%s, error: %s, we would disconnect from this peer.", peer.PKIID.String(), peer.Endpoint, err.Error())
+			c.disconnect(peer.PKIID)
+		}
+		conn.send(msg, onErr, shouldBlock)
+		return
+	}
+}
+
+func (c *commImpl) isStopping() bool {
+	return atomic.LoadInt32(&c.stopping) == 1
+}
+
+func (c *commImpl) disconnect(pkiID utils.PKIidType) {
+	select {
+	case c.deadEndpoints <- pkiID:
+	case <-c.exitCh:
+		return
+	}
+	c.connStore.closeConnByPKIid(pkiID)
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+func extractRemoteAddress(stream stream) string {
+	var remoteAddress string
+	p, ok := peer.FromContext(stream.Context())
+	if ok {
+		if p.Addr != nil {
+			remoteAddress = p.Addr.String()
+		}
+	}
+	return remoteAddress
+}
+
+func certHashFromRawCert(rawCert []byte) []byte {
+	if len(rawCert) == 0 {
+		return nil
+	}
+	return commonutils.ComputeSHA256(rawCert)
+}
+
+func extractCertificateHashFromContext(ctx context.Context) []byte {
+	peer, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil
+	}
+
+	if peer.AuthInfo == nil {
+		return nil
+	}
+
+	tlsInfo, isTLSConn := peer.AuthInfo.(credentials.TLSInfo)
+	if !isTLSConn {
+		return nil
+	}
+	certs := tlsInfo.State.PeerCertificates
+	if len(certs) == 0 {
+		return nil
+	}
+	raw := certs[0].Raw
+	return certHashFromRawCert(raw)
+}
+
+func readWithTimeout(stream stream, timeout time.Duration, address string) (*protoext.SignedGossipMessage, error) {
+	inCh := make(chan *protoext.SignedGossipMessage, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		if m, err := stream.Recv(); err == nil {
+			msg, err := protoext.EnvelopeToSignedGossipMessage(m)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			inCh <- msg
+		}
+	}()
+
+	select {
+	case <-time.After(timeout):
+		return nil, errors.NewErrorf("timed out waiting for connection message from %s", address)
+	case m := <-inCh:
+		return m, nil
+	case err := <-errCh:
+		return nil, err
+	}
+}
+
+// createConnectionMsg 创建连接信息。
+func createConnectionMsg(pkiID utils.PKIidType, certHash []byte, cert utils.PeerIdentityType, signer protoext.SignFuncType, isProbe bool) (*protoext.SignedGossipMessage, error) {
+	m := &pgossip.GossipMessage{
+		Tag:   pgossip.GossipMessage_EMPTY,
+		Nonce: 0,
+		Content: &pgossip.GossipMessage_ConnEstablish{
+			ConnEstablish: &pgossip.ConnEstablish{
+				TlsCertHash: certHash,
+				Identity:    cert,
+				PkiId:       pkiID,
+				Probe:       isProbe,
+			},
+		},
+	}
+	smg := &protoext.SignedGossipMessage{
+		GossipMessage: m,
+	}
+	_, err := smg.Sign(signer)
+	return smg, err
 }

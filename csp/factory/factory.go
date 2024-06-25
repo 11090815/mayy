@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/csp"
 	"github.com/11090815/mayy/csp/softimpl"
@@ -16,7 +17,6 @@ import (
 	"github.com/11090815/mayy/csp/softimpl/ecdsa"
 	"github.com/11090815/mayy/csp/softimpl/hash"
 	"github.com/11090815/mayy/csp/softimpl/keystore"
-	"github.com/11090815/mayy/common/errors"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -81,9 +81,9 @@ func InitCSPFactoryWithOpts(opts *FactoryOpts) {
 }
 
 func GetCSP() (csp.CSP, error) {
-	if defaultFactory.opts == nil {
-		logger.Warn("Before using CSP, please call InitCSPFactoryWithOpts(), falling back to temporary csp.")
+	if defaultFactory == nil || defaultFactory.opts == nil {
 		getTemporaryCSPOnce.Do(func() {
+			logger.Warn("Before using CSP, please call InitCSPFactoryWithOpts(), falling back to temporary csp.")
 			var err error
 			temporaryCSP, err = createSoftBasedCSP(defaultFactoryOpts)
 			if err != nil {

@@ -2,6 +2,18 @@ package metrics
 
 import "github.com/11090815/mayy/common/metrics"
 
+type GossipMetrics struct {
+	CommMetrics *CommMetrics
+}
+
+func NewGossipMetrics(p metrics.Provider) *GossipMetrics {
+	return &GossipMetrics{
+		CommMetrics: newCommMetrics(p),
+	}
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
 type CommMetrics struct {
 	SentMessages     metrics.Counter
 	BufferOverflow   metrics.Counter

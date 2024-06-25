@@ -8,8 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/11090815/mayy/core/config"
 	"github.com/11090815/mayy/common/errors"
+	"github.com/11090815/mayy/core/config"
 	"github.com/spf13/viper"
 )
 
@@ -22,9 +22,9 @@ const (
 // writer 定义了条目写入器接口。
 type writer interface {
 	// WriteEntry 利用写入器将日志条目写入到指定位置，返回写入内容的字节数量和可能出现的错误。
-	WriteEntry(e *entry) error
+	writeEntry(e *entry) error
 	// Close 关闭写入日志的记录器。
-	Close() error
+	close() error
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -34,7 +34,7 @@ type terminalWriter struct {
 	stopCh      chan struct{}
 }
 
-func NewTerminalWriter() writer {
+func newTerminalWriter() writer {
 	writer := &terminalWriter{
 		entriesPool: make(chan *entry, entriesPoolSize),
 		stopCh:      make(chan struct{}),
@@ -54,7 +54,7 @@ func NewTerminalWriter() writer {
 	return writer
 }
 
-func (writer *terminalWriter) WriteEntry(e *entry) error {
+func (writer *terminalWriter) writeEntry(e *entry) error {
 	select {
 	case writer.entriesPool <- e:
 		return nil
@@ -63,7 +63,7 @@ func (writer *terminalWriter) WriteEntry(e *entry) error {
 	}
 }
 
-func (writer *terminalWriter) Close() error {
+func (writer *terminalWriter) close() error {
 	close(writer.stopCh)
 	return nil
 }
@@ -156,11 +156,11 @@ func NewMultiFileWriter() (writer, error) {
 	return mfw, nil
 }
 
-func (mfw *multiFileWriter) WriteEntry(e *entry) (err error) {
+func (mfw *multiFileWriter) writeEntry(e *entry) (err error) {
 	return mfw.writers[e.level.String()].write(mfw.maxSize, e)
 }
 
-func (mfw *multiFileWriter) Close() error {
+func (mfw *multiFileWriter) close() error {
 	errCh := make(chan error, len(mfw.writers))
 	for name, wr := range mfw.writers {
 		if err := wr.wr.Close(); err != nil {
@@ -186,7 +186,7 @@ type fileWriter struct {
 	mutex          *sync.Mutex
 }
 
-func newFileWriter(dirPath string, lvl level) (*fileWriter, error) {
+func newFileWriter(dirPath string, lvl Level) (*fileWriter, error) {
 	files, err := os.ReadDir(filepath.Join(dirPath, lvl.String()))
 	if err != nil {
 		return nil, errors.NewErrorf("failed reading %s log directory \"%s\", the error is \"%s\"", lvl.String(), filepath.Join(dirPath, lvl.String()), err.Error())
@@ -279,10 +279,10 @@ func ReadConfig() (*fileWriterConfig, *viper.Viper, error) {
 
 type mockWriter struct{}
 
-func (mock *mockWriter) WriteEntry(*entry) error {
+func (mock *mockWriter) writeEntry(*entry) error {
 	return nil
 }
 
-func (mock *mockWriter) Close() error {
+func (mock *mockWriter) close() error {
 	return nil
 }

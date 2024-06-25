@@ -45,6 +45,7 @@ func newConnStore(connFactory connFactory, logger mlog.Logger, config ConnConfig
 		destinationLocks: make(map[string]*sync.Mutex),
 		logger:           logger,
 		config:           config,
+		mutex:            &sync.RWMutex{},
 	}
 }
 
@@ -80,7 +81,7 @@ func (cs *connStore) getConnection(peer *RemotePeer) (*connection, error) {
 
 	createdConnection, err := cs.connFactory.createConnection(endpoint, pkiID)
 	if err == nil {
-		cs.logger.Debugf("Created new connection to %s@%s.", pkiID.String(), endpoint)
+		cs.logger.Debugf("The new connection to %s@%s has been established.", pkiID.String(), endpoint)
 	}
 	destinationLock.Unlock()
 
@@ -110,6 +111,7 @@ func (cs *connStore) getConnection(peer *RemotePeer) (*connection, error) {
 	// 在已建立的连接中，可能存在有连接的对等方的 id 变更了，那么就将
 	// 旧连接给关闭掉，存入新的连接
 	if conn, exists := cs.pki2Conn[createdConnection.pkiID.String()]; exists {
+		cs.logger.Debugf("Close the old connection to %s@%s.", pkiID.String(), endpoint)
 		conn.close()
 	}
 
@@ -148,7 +150,7 @@ func (cs *connStore) onConnected(serverStream pgossip.Gossip_GossipStreamServer,
 	}
 
 	conn := newConnection(nil, nil, serverStream, metrics, cs.config)
-	conn.pkiID = conn.pkiID
+	conn.pkiID = connInfo.ID
 	conn.info = connInfo
 	conn.logger = cs.logger
 	cs.pki2Conn[connInfo.ID.String()] = conn
@@ -271,7 +273,7 @@ func (c *connection) readFromStream(errChan chan error, msgChan chan *protoext.S
 	for {
 		select {
 		case <-c.stopCh:
-			c.logger.Debug("Stopping reading from stream")
+			c.logger.Debug("Stopping reading from stream.")
 			return
 		default:
 			envelope, err := stream.Recv()
@@ -290,6 +292,7 @@ func (c *connection) readFromStream(errChan chan error, msgChan chan *protoext.S
 			select {
 			case <-c.stopCh:
 			case msgChan <- msg:
+				c.logger.Debugf("Receive message %s from %s@%s.", msg.String(), c.pkiID.String(), c.info.Endpoint)
 			}
 		}
 	}

@@ -79,7 +79,7 @@ func CreateGRPCLayer() (port int, gRPCServer *comm.GRPCServer, certs *TLSCertifi
 			UseTLS:      true,
 		},
 	}
-	gRPCServer, err = comm.NewGRPCServer("127.0.0.1", serverConfig)
+	gRPCServer, err = comm.NewGRPCServer("127.0.0.1:", serverConfig)
 	if err != nil {
 		panic(err)
 	}

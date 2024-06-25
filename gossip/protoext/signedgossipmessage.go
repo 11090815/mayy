@@ -105,12 +105,16 @@ func (sgm *SignedGossipMessage) String() string {
 			gossipMessage = DataRequestToString(sgm.GetDataReq())
 		} else if sgm.GetLeadershipMsg() != nil {
 			gossipMessage = LeadershipMessageToString(sgm.GetLeadershipMsg())
+		} else if sgm.GetConnEstablish() != nil {
+			gossipMessage = ConnEstablishToString(sgm.GetConnEstablish())
+		} else if sgm.GetDataMsg() != nil {
+			gossipMessage = DataMessageToString(sgm.GetDataMsg())
 		} else {
 			gossipMessage = sgm.GossipMessage.String()
 			isSimple = true
 		}
 		if !isSimple {
-			description := fmt.Sprintf("{Description | Channel: %s, Nonce: %d, Tag: %s}", hex.EncodeToString(sgm.Channel), sgm.Nonce, sgm.Tag.String())
+			description := fmt.Sprintf("{Description | Channel: %s, Nonce: %d, Tag: %s}", ChannelToString(sgm.Channel), sgm.Nonce, sgm.Tag.String())
 			gossipMessage = fmt.Sprintf("{%s %s}", description, gossipMessage)
 		}
 	}
@@ -174,4 +178,11 @@ func InternalEndpoint(se *pgossip.SecretEnvelope) string {
 		return ""
 	}
 	return secret.GetInternalEndpoint()
+}
+
+func ChannelToString(channel []byte) string {
+	if len(channel) == 0 {
+		return "nil-channel"
+	}
+	return hex.EncodeToString(channel)
 }

@@ -14,7 +14,7 @@ type entry struct {
 	timestamp string
 	module    string
 	msg       string
-	level     level
+	level     Level
 	ctx       string
 }
 
@@ -34,7 +34,7 @@ func (e *entry) NormalLevelString() string {
 	}
 }
 
-func newEntry(timestamp string, module string, level level, msg string, ctx string, printPath bool) *entry {
+func newEntry(timestamp string, module string, level Level, msg string, ctx string, printPath bool) *entry {
 	if printPath {
 		pc, file, line, ok := runtime.Caller(2)
 		if !ok {

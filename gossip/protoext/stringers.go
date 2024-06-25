@@ -30,6 +30,9 @@ func AliveMessageToString(am *pgossip.AliveMessage) string {
 }
 
 func PayloadToString(p *pgossip.Payload) string {
+	if p == nil {
+		return "nil-payload"
+	}
 	return fmt.Sprintf("{Payload | SeqNum: %d; Data: %dbytes; PrivateData: %ditems}", p.SeqNum, len(p.Data), len(p.PrivateData))
 }
 
@@ -90,4 +93,28 @@ func RemotePvtDataResponseToString(rpdr *pgossip.RemotePvtDataResponse) string {
 
 func RemoteStateResponseToString(rsr *pgossip.RemoteStateResponse) string {
 	return fmt.Sprintf("{RemoteStateResponse | Payloads: %ditems}", len(rsr.Payloads))
+}
+
+func ConnEstablishToString(ce *pgossip.ConnEstablish) string {
+	var identity string
+	if len(ce.Identity) == 0 {
+		identity = "nil-identity"
+	} else if len(ce.Identity) < 32 {
+		identity = hex.EncodeToString(ce.Identity)
+	} else {
+		identity = hex.EncodeToString(ce.Identity[:8]) + "..." + hex.EncodeToString(ce.Identity[len(ce.Identity)-8:])
+	}
+	var certHash string
+	if len(ce.TlsCertHash) == 0 {
+		certHash = "nil tls-cert"
+	} else if len(ce.TlsCertHash) < 32 {
+		certHash = hex.EncodeToString(ce.TlsCertHash)
+	} else {
+		certHash = hex.EncodeToString(ce.TlsCertHash[:8]) + "..." + hex.EncodeToString(ce.TlsCertHash[len(ce.TlsCertHash)-8:])
+	}
+	return fmt.Sprintf("{ConnEstablish | PKI-ID: %s, Identity: %s, TlsCertHash: %s, Probe: %v}", hex.EncodeToString(ce.PkiId), identity, certHash, ce.Probe)
+}
+
+func DataMessageToString(dm *pgossip.DataMessage) string {
+	return fmt.Sprintf("{DataMessage | Payload: %s}", PayloadToString(dm.Payload))
 }

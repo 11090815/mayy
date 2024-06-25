@@ -16,7 +16,7 @@ type PKIidType []byte
 
 func (id PKIidType) String() string {
 	if len(id) == 0 {
-		return "<nil>"
+		return "<nil pki-id>"
 	}
 	return hex.EncodeToString(id)
 }
@@ -45,7 +45,7 @@ type MessageCryptoService interface {
 
 	// VerifyBlockAttestation 与 VerifyBlock 做同样的事情，除了它假设 block.data = nil。因此，它不会计算 block.Data.Hash()
 	// 并将其与 block.Header.DataHash 进行比较。当 orderer 交付一个只有 header 和 metadata 的 block 时使用，作为 block 存在的证明。
-	VerifyBlockAttestation(channelID string, block *pcommon.Block) error
+	VerifyBlockAttestation(channelID ChannelID, block *pcommon.Block) error
 
 	Sign(msg []byte) ([]byte, error)
 

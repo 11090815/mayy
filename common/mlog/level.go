@@ -2,10 +2,10 @@ package mlog
 
 import "fmt"
 
-type level uint8
+type Level uint8
 
 const (
-	DebugLevel level = iota + 1
+	DebugLevel Level = iota + 1
 	InfoLevel
 	WarnLevel
 	ErrorLevel
@@ -14,7 +14,7 @@ const (
 )
 
 // String 返回描述日志等级的 Level 的小写字符串形式。
-func (l level) String() (levelStr string) {
+func (l Level) String() (levelStr string) {
 	switch l {
 	case DebugLevel:
 		levelStr = "debug"
@@ -30,7 +30,7 @@ func (l level) String() (levelStr string) {
 	return levelStr
 }
 
-func (l level) ColorString() (levelStr string) {
+func (l Level) ColorString() (levelStr string) {
 	switch l {
 	case DebugLevel:
 		return fmt.Sprintf("\x1b[34m%s\x1b[0m", "debug")
@@ -48,7 +48,7 @@ func (l level) ColorString() (levelStr string) {
 }
 
 // ParseLevel 给定描述日志等级的字符串，返回其对应的 Level。
-func ParseLevel(levelStr string) (lvl level) {
+func ParseLevel(levelStr string) (lvl Level) {
 	switch levelStr {
 	case "debug", "Debug", "DEBUG":
 		lvl = DebugLevel

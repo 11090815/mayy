@@ -42,7 +42,7 @@ func init() {
 		lvl:       DebugLevel,
 		printPath: true,
 		module:    "MAYY",
-		terminal:  NewTerminalWriter(),
+		terminal:  newTerminalWriter(),
 		file:      mfw,
 		isStopped: false,
 		ctx:       make([]string, 0),
@@ -54,7 +54,7 @@ func init() {
 
 type logger struct {
 	// lvl 定义记录的日志等级。
-	lvl level
+	lvl Level
 
 	// printPath 字段控制是否在每条日志记录上增加 file:line 信息。
 	printPath bool
@@ -79,7 +79,7 @@ type logger struct {
 	mutex *sync.RWMutex
 }
 
-func GetLogger(module string, lvl level, printPath ...bool) Logger {
+func GetLogger(module string, lvl Level, printPath ...bool) Logger {
 	l := &logger{
 		lvl:       lvl,
 		printPath: loggerBus.printPath,
@@ -92,6 +92,23 @@ func GetLogger(module string, lvl level, printPath ...bool) Logger {
 	}
 	if module == "test" {
 		l.file = &mockWriter{}
+	}
+	if len(printPath) > 0 {
+		l.printPath = printPath[0]
+	}
+	return l
+}
+
+func GetTestLogger(module string, lvl Level, printPath ...bool) Logger {
+	l := &logger{
+		lvl:       lvl,
+		printPath: loggerBus.printPath,
+		module:    module,
+		terminal:  loggerBus.terminal,
+		file:      &mockWriter{},
+		kvLoggers: make(map[string]*logger),
+		ctx:       make([]string, 0),
+		mutex:     &sync.RWMutex{},
 	}
 	if len(printPath) > 0 {
 		l.printPath = printPath[0]
@@ -200,8 +217,8 @@ func (l *logger) Stop() error {
 	loggerBus.mutex.Lock()
 	loggerBus.isStopped = true
 	loggerBus.mutex.Unlock()
-	loggerBus.terminal.Close()
-	return loggerBus.file.Close()
+	loggerBus.terminal.close()
+	return loggerBus.file.close()
 }
 
 func (l *logger) stopped() bool {
@@ -211,7 +228,7 @@ func (l *logger) stopped() bool {
 }
 
 // silent 给定的日志等级如果小于 logger 设定的日志等级，则保持沉默，不输出日志信息。
-func (l *logger) silent(lvl level) bool {
+func (l *logger) silent(lvl Level) bool {
 	return lvl < l.lvl
 }
 
@@ -219,8 +236,8 @@ func (l *logger) log(e *entry) {
 	if loggerBus.stopped() {
 		return
 	}
-	l.file.WriteEntry(e)
-	l.terminal.WriteEntry(e)
+	l.file.writeEntry(e)
+	l.terminal.writeEntry(e)
 }
 
 func (l *logger) ctxStr() string {
