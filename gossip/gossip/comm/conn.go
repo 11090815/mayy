@@ -50,76 +50,69 @@ func newConnStore(connFactory connFactory, logger mlog.Logger, config ConnConfig
 }
 
 func (cs *connStore) getConnection(peer *RemotePeer) (*connection, error) {
-	cs.mutex.RLock()
-	isClosing := cs.isClosing
-	cs.mutex.RUnlock()
-	if isClosing {
-		return nil, errors.NewError("conn store is closing")
+	if cs.isClosed() {
+		return nil, errors.NewError("conn store is closed")
 	}
 
 	pkiID := peer.PKIID
 	endpoint := peer.Endpoint
 
-	cs.mutex.Lock()
-	destinationLock, hasConnected := cs.destinationLocks[pkiID.String()]
-	if !hasConnected {
-		destinationLock = &sync.Mutex{}
-		cs.destinationLocks[pkiID.String()] = destinationLock
-	}
-	cs.mutex.Unlock()
+	cs.lockPeer(pkiID)
+	defer cs.unlockPeer(pkiID)
 
-	destinationLock.Lock()
+	// 如果已经建立过连接，则返回旧连接，不要再建立新的连接了
 	cs.mutex.RLock()
 	conn, exists := cs.pki2Conn[pkiID.String()]
 	if exists {
 		cs.mutex.RUnlock()
-		destinationLock.Unlock()
 		return conn, nil
 	}
-	// 没有与对方建立连接
 	cs.mutex.RUnlock()
 
 	createdConnection, err := cs.connFactory.createConnection(endpoint, pkiID)
 	if err == nil {
 		cs.logger.Debugf("The new connection to %s@%s has been established.", pkiID.String(), endpoint)
-	}
-	destinationLock.Unlock()
-
-	cs.mutex.RLock()
-	isClosing = cs.isClosing
-	cs.mutex.RUnlock()
-	if isClosing {
-		return nil, errors.NewError("conn store is closing")
-	}
-
-	cs.mutex.Lock()
-	delete(cs.destinationLocks, pkiID.String())
-	defer cs.mutex.Unlock()
-
-	conn, exists = cs.pki2Conn[pkiID.String()]
-	if exists {
-		if createdConnection != nil {
-			createdConnection.close()
+		// 检查一下对方是不是已经主动与我们建立了连接，如果已经主动建立了连接，那就把新建立的连接删除掉，然后返回之前建立的连接
+		conn, exists = cs.pki2Conn[pkiID.String()]
+		if exists {
+			if createdConnection != nil {
+				createdConnection.close()
+			}
+			return conn, nil
 		}
-		return conn, nil
-	}
+		// 在已建立的连接中，可能存在有连接的对等方的 id 变更了，那么就将旧连接给关闭掉，并存入新的连接
+		if conn, exists := cs.pki2Conn[createdConnection.pkiID.String()]; exists {
+			cs.logger.Debugf("Close the old connection to %s@%s.", pkiID.String(), endpoint)
+			conn.close()
+		}
+		cs.pki2Conn[createdConnection.pkiID.String()] = createdConnection
+		go createdConnection.serviceConnection()
 
-	if err != nil {
+		return createdConnection, nil
+	} else {
 		return nil, err
 	}
+}
 
-	// 在已建立的连接中，可能存在有连接的对等方的 id 变更了，那么就将
-	// 旧连接给关闭掉，存入新的连接
-	if conn, exists := cs.pki2Conn[createdConnection.pkiID.String()]; exists {
-		cs.logger.Debugf("Close the old connection to %s@%s.", pkiID.String(), endpoint)
-		conn.close()
+func (cs *connStore) lockPeer(pkiID utils.PKIidType) {
+	cs.mutex.Lock()
+	destinationLock, goingToConnect := cs.destinationLocks[pkiID.String()]
+	if !goingToConnect {
+		destinationLock = &sync.Mutex{}
+		cs.destinationLocks[pkiID.String()] = destinationLock
 	}
+	cs.mutex.Unlock()
+	destinationLock.Lock()
+}
 
-	cs.pki2Conn[createdConnection.pkiID.String()] = createdConnection
-
-	go createdConnection.serviceConnection()
-
-	return createdConnection, nil
+func (cs *connStore) unlockPeer(pkiID utils.PKIidType) {
+	destinationLock, exists := cs.destinationLocks[pkiID.String()]
+	if exists {
+		destinationLock.Unlock()
+		// cs.mutex.Lock()
+		// delete(cs.destinationLocks, pkiID.String())
+		// cs.mutex.Unlock()
+	}
 }
 
 func (cs *connStore) connNum() int {
@@ -138,6 +131,12 @@ func (cs *connStore) shutdown() {
 		cs.pki2Conn = make(map[string]*connection)
 		cs.mutex.Unlock()
 	})
+}
+
+func (cs *connStore) isClosed() bool {
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+	return cs.isClosing
 }
 
 // onConnected 关闭到远程对等点的任何连接，并为其创建一个新的连接对象，以便在一对对等点之间只有一个单向连接
@@ -162,6 +161,7 @@ func (cs *connStore) closeConnByPKIid(pkiID utils.PKIidType) {
 	defer cs.mutex.Unlock()
 	if conn, exists := cs.pki2Conn[pkiID.String()]; exists {
 		conn.close()
+		cs.logger.Warnf("Close connection %s@%s.", conn.pkiID.String(), conn.info.Endpoint)
 		delete(cs.pki2Conn, pkiID.String())
 	}
 }

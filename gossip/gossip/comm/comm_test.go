@@ -12,10 +12,12 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -276,6 +278,57 @@ func getAvailablePort(t *testing.T) (int, string, net.Listener) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 	return port, endpoint, ll
+}
+
+func waitForMessages(t *testing.T, msgChan chan uint64, count int, errMsg string) {
+	c := 0
+	waiting := true
+	timer := time.NewTimer(time.Second * 10)
+	for waiting {
+		select {
+		case <-msgChan:
+			c++
+			if c == count {
+				waiting = false
+			}
+		case <-timer.C:
+			waiting = false
+		}
+	}
+	require.Equal(t, count, c, errMsg)
+}
+
+func establishSession(t *testing.T, port int) (pgossip.Gossip_GossipStreamClient, error) {
+	cert := generateCertificateOrPanic()
+	secureOpts := grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{cert},
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	endpoint := fmt.Sprintf("127.0.0.1:%d", port)
+	conn, err := grpc.DialContext(ctx, endpoint, secureOpts, grpc.WithBlock())
+	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
+	client := pgossip.NewGossipClient(conn)
+	stream, err := client.GossipStream(context.Background())
+	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
+	clientCertHash := certHashFromRawCert(cert.Certificate[0])
+	pkiID := utils.PKIidType([]byte{1, 2, 3})
+	msg, _ := createConnectionMsg(pkiID, clientCertHash, []byte{1, 2, 3}, signer, false)
+	stream.Send(msg.Envelope)
+	envelope, err := stream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	require.NotNil(t, envelope)
+	return stream, nil
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -584,7 +637,7 @@ type nonResponsivePeer struct {
 	port int
 }
 
-func newNonResponsivePeer(t *testing.T) *nonResponsivePeer {
+func newNonResponsivePeer() *nonResponsivePeer {
 	port, gRPCServer, _, _, _ := utils.CreateGRPCLayer()
 	nrp := &nonResponsivePeer{
 		Server: gRPCServer.Server(),
@@ -611,7 +664,7 @@ func (nrp *nonResponsivePeer) stop() {
 func TestNonResponsivePing(t *testing.T) {
 	c, _ := newCommInstance(t, mockSP)
 	defer c.Stop()
-	nrp := newNonResponsivePeer(t)
+	nrp := newNonResponsivePeer()
 	defer nrp.stop()
 	s := make(chan struct{})
 	go func() {
@@ -661,9 +714,303 @@ func TestResponses(t *testing.T) {
 
 func TestAccept(t *testing.T) {
 	comm1, port1 := newCommInstance(t, mockSP)
-	comm2, _ := newCommInstance(t, mockSP)
+	comm2, port2 := newCommInstance(t, mockSP)
 
 	evenNONCESelector := func(m any) bool {
 		return m.(protoext.ReceivedMessage).GetGossipMessage().Nonce%2 == 0
 	}
+	oddNONCESelector := func(m any) bool {
+		return m.(protoext.ReceivedMessage).GetGossipMessage().Nonce%2 != 0
+	}
+
+	evenNONCES1 := comm1.Accept(evenNONCESelector)
+	oddNONCES1 := comm1.Accept(oddNONCESelector)
+	evenNONCES2 := comm2.Accept(evenNONCESelector)
+	oddNONCES2 := comm2.Accept(oddNONCESelector)
+
+	var evenResults1 []uint64
+	var oddResults1 []uint64
+	var evenResults2 []uint64
+	var oddResults2 []uint64
+
+	out1 := make(chan uint64)
+	out2 := make(chan uint64)
+	sem := make(chan struct{})
+
+	readIntoSlice := func(a *[]uint64, out chan<- uint64, ch <-chan protoext.ReceivedMessage) {
+		for m := range ch {
+			*a = append(*a, m.GetGossipMessage().GetNonce())
+			select {
+			case out <- m.GetGossipMessage().Nonce:
+			default:
+			}
+		}
+		sem <- struct{}{}
+	}
+
+	go readIntoSlice(&evenResults1, out1, evenNONCES1)
+	go readIntoSlice(&oddResults1, out1, oddNONCES1)
+	go readIntoSlice(&evenResults2, out2, evenNONCES2)
+	go readIntoSlice(&oddResults2, out2, oddNONCES2)
+	stopSend := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stopSend:
+				return
+			default:
+				comm1.Send(createGossipMsg(), remotePeer(port2))
+				comm2.Send(createGossipMsg(), remotePeer(port1))
+			}
+		}
+	}()
+
+	waitForMessages(t, out1, 5, "Didn't receive all messages")
+	waitForMessages(t, out2, 5, "Didn't receive all messages")
+	close(stopSend)
+	comm2.Stop()
+	comm1.Stop()
+
+	<-sem
+	<-sem
+	<-sem
+	<-sem
+
+	require.NotEmpty(t, evenResults1)
+	require.NotEmpty(t, oddResults1)
+	require.NotEmpty(t, evenResults2)
+	require.NotEmpty(t, oddResults2)
+
+	remainderPredicate := func(a []uint64, b uint64) {
+		for _, n := range a {
+			require.Equal(t, n%2, b)
+		}
+	}
+
+	remainderPredicate(evenResults1, 0)
+	remainderPredicate(oddResults1, 1)
+	remainderPredicate(evenResults2, 0)
+	remainderPredicate(oddResults2, 1)
+
+	t.Logf("comm1 received %d even nonces", len(evenResults1))
+	t.Logf("comm1 received %d odd nonces", len(oddResults1))
+	t.Logf("comm2 received %d even nonces", len(evenResults2))
+	t.Logf("comm2 received %d odd nonces", len(oddResults2))
+}
+
+func TestReConnections(t *testing.T) {
+	comm1, port1 := newCommInstance(t, mockSP)
+	comm2, port2 := newCommInstance(t, mockSP)
+
+	reader := func(out chan uint64, in <-chan protoext.ReceivedMessage) {
+		for {
+			msg := <-in
+			if msg == nil {
+				return
+			}
+			out <- msg.GetGossipMessage().GetNonce()
+		}
+	}
+
+	out1 := make(chan uint64, 10)
+	out2 := make(chan uint64, 10)
+
+	go reader(out1, comm1.Accept(acceptAll))
+	go reader(out2, comm2.Accept(acceptAll))
+
+	comm1.Send(createGossipMsg(), remotePeer(port2))
+	waitForMessages(t, out2, 1, "Comm2 didn't receive a message from comm1 in a timely manner")
+
+	comm2.Send(createGossipMsg(), remotePeer(port1))
+	waitForMessages(t, out1, 1, "Comm1 didn't receive a message from comm2 in a timely manner")
+
+	comm1.Stop()
+
+	comm1, port1 = newCommInstance(t, mockSP)
+	out1 = make(chan uint64, 1)
+	go reader(out1, comm1.Accept(acceptAll))
+	comm2.Send(createGossipMsg(), remotePeer(port1))
+	waitForMessages(t, out1, 1, "Comm1 didn't receive a message from comm2 in a timely manner")
+	comm1.Stop()
+	comm2.Stop()
+}
+
+func TestProbe(t *testing.T) {
+	comm1, port1 := newCommInstance(t, mockSP)
+	defer comm1.Stop()
+	comm2, port2 := newCommInstance(t, mockSP)
+
+	time.Sleep(time.Second)
+	require.NoError(t, comm1.Probe(remotePeer(port2)))
+	_, err := comm1.Handshake(remotePeer(port2))
+	require.NoError(t, err)
+
+	tempPort, _, ll := getAvailablePort(t)
+	defer ll.Close()
+	err = comm1.Probe(remotePeer(tempPort))
+	require.Error(t, err)
+	t.Logf("err1 [%v]", err)
+	_, err = comm1.Handshake(remotePeer(tempPort))
+	require.Error(t, err)
+	t.Logf("err2 [%v]", err)
+
+	comm2.Stop()
+	time.Sleep(time.Second)
+	err = comm1.Probe(remotePeer(port2))
+	require.Error(t, err)
+	t.Logf("err3 [%v]", err)
+	_, err = comm1.Handshake(remotePeer(port2))
+	require.Error(t, err)
+	t.Logf("err4 [%v]", err)
+
+	comm2, port2 = newCommInstance(t, mockSP)
+	defer comm2.Stop()
+	time.Sleep(time.Second)
+	err = comm2.Probe(remotePeer(port1))
+	require.NoError(t, err)
+	_, err = comm2.Handshake(remotePeer(port1))
+	require.NoError(t, err)
+
+	require.NoError(t, comm1.Probe(remotePeer(port2)))
+	_, err = comm1.Handshake(remotePeer(port2))
+	require.NoError(t, err)
+
+	wrongRemotePeer := remotePeer(port2)
+	if wrongRemotePeer.PKIID[0] == 0 {
+		wrongRemotePeer.PKIID[0] = 1
+	} else {
+		wrongRemotePeer.PKIID[0] = 0
+	}
+	_, err = comm1.Handshake(wrongRemotePeer)
+	require.Error(t, err)
+	t.Logf("err5 [%v]", err)
+}
+
+func TestPresumedDead(t *testing.T) {
+	comm1, _ := newCommInstance(t, mockSP)
+	comm2, port2 := newCommInstance(t, mockSP)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		wg.Wait()
+		comm1.Send(createGossipMsg(), remotePeer(port2))
+	}()
+
+	timer := time.NewTimer(time.Second * 10)
+	acceptCh := comm2.Accept(acceptAll)
+	wg.Done()
+	select {
+	case <-acceptCh:
+		timer.Stop()
+	case <-timer.C:
+		require.Fail(t, "Didn't get first message")
+	}
+
+	comm2.Stop()
+	go func() {
+		for i := 0; i < 5; i++ {
+			comm1.Send(createGossipMsg(), remotePeer(port2))
+			time.Sleep(200 * time.Millisecond)
+		}
+	}()
+
+	timer = time.NewTimer(time.Second * 3)
+	select {
+	case <-timer.C:
+		require.Fail(t, "Didn't get a presumed dead message within a timely manner")
+		break
+	case <-comm1.PresumedDead():
+		timer.Stop()
+		break
+	}
+}
+
+func TestReadFromStream(t *testing.T) {
+	stream := &mocks.MockStream{}
+	stream.On("CloseSend").Return(nil)
+	stream.On("Recv").Return(&pgossip.Envelope{Payload: []byte{1}}, nil).Once()
+	stream.On("Recv").Return(nil, errors.NewError("stream closed")).Once()
+
+	conn := newConnection(nil, nil, stream, disabledMetrics, ConnConfig{1, 1})
+	conn.logger = utils.GetLogger(utils.CommLogger, "test-stream", mlog.DebugLevel, true, true)
+
+	errChan := make(chan error, 2)
+	msgChan := make(chan *protoext.SignedGossipMessage, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn.readFromStream(errChan, msgChan)
+	}()
+
+	select {
+	case <-msgChan:
+		require.Fail(t, "malformed message shouldn't have been received")
+	case <-time.After(time.Millisecond * 100):
+		require.Len(t, errChan, 1)
+	}
+
+	conn.close()
+	wg.Wait()
+}
+
+func TestSendBadEnvelope(t *testing.T) {
+	comm1, port1 := newCommInstance(t, mockSP)
+	defer comm1.Stop()
+
+	stream, err := establishSession(t, port1)
+	require.NoError(t, err)
+	require.NotNil(t, stream)
+
+	inc := comm1.Accept(acceptAll)
+	goodMsg := createGossipMsg()
+	err = stream.Send(goodMsg.Envelope)
+	require.NoError(t, err)
+
+	select {
+	case goodMsgReceived := <-inc:
+		require.Equal(t, goodMsgReceived.GetGossipMessage().Payload, goodMsg.Envelope.Payload)
+	case <-time.After(time.Second * 3):
+		require.Fail(t, "Didn't receive message within a timely manner")
+		return
+	}
+
+	start := time.Now()
+	for {
+		badMsg := createGossipMsg()
+		badMsg.Envelope.Payload = []byte{1}
+		err = stream.Send(badMsg.Envelope)
+		if err != nil {
+			require.Equal(t, io.EOF, err)
+			break
+		}
+		if time.Now().After(start.Add(time.Second * 30)) {
+			require.Fail(t, "Didn't close stream within a timely manner")
+			return
+		}
+	}
+}
+
+func TestConcurrentCloseSend(t *testing.T) {
+	var stopping int32
+	comm1, _ := newCommInstance(t, mockSP)
+	comm2, port2 := newCommInstance(t, mockSP)
+	inc := comm2.Accept(acceptAll)
+	comm1.Send(createGossipMsg(), remotePeer(port2))
+	<-inc
+	ready := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		comm1.Send(createGossipMsg(), remotePeer(port2))
+		close(ready)
+		for atomic.LoadInt32(&stopping) == 0 {
+			comm1.Send(createGossipMsg(), remotePeer(port2))
+		}
+	}()
+
+	<-ready
+	comm2.Stop()
+	atomic.StoreInt32(&stopping, 1)
+	<-done
 }

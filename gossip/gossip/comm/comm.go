@@ -160,6 +160,7 @@ type commImpl struct {
 	stopWg          sync.WaitGroup
 	subscriptions   []chan protoext.ReceivedMessage
 	stopping        int32
+	stopOnce        sync.Once
 	metrics         *metrics.CommMetrics
 
 	recvBuffSize int
@@ -401,7 +402,7 @@ func (c *commImpl) GossipStream(stream pgossip.Gossip_GossipStreamServer) error 
 	}
 	conn.handler = interceptAcks(h, connInfo.ID, c.pubsub)
 	defer func() {
-		c.logger.Debugf("Disconnect from client %s@%s.", connInfo.ID.String(), connInfo.Endpoint)
+		c.logger.Infof("Disconnect from client %s@%s.", connInfo.ID.String(), connInfo.Endpoint)
 		c.connStore.closeConnByPKIid(conn.pkiID)
 	}()
 
@@ -413,20 +414,39 @@ func (c *commImpl) Ping(context.Context, *pgossip.Empty) (*pgossip.Empty, error)
 }
 
 func (c *commImpl) Stop() {
-	if !atomic.CompareAndSwapInt32(&c.stopping, 0, 1) {
-		return
-	}
+	c.stopOnce.Do(func() {
+		c.connStore.shutdown()
+		c.msgPublisher.Close()
+		c.idMapper.Stop()
+		close(c.exitCh)
+		c.stopWg.Wait()
+		c.closeSubscriptions()
+		c.logger.Info("Stopping comm instance.")
+		atomic.StoreInt32(&c.stopping, 1)
+	})
 
-	c.logger.Info("Stopping comm instance.")
-	c.connStore.shutdown()
-	c.msgPublisher.Close()
-	c.idMapper.Stop()
-	close(c.exitCh)
-	c.stopWg.Wait()
-	c.closeSubscriptions()
 }
 
 /* ------------------------------------------------------------------------------------------ */
+
+func (c *commImpl) sendToEndpoint(peer *RemotePeer, msg *protoext.SignedGossipMessage, shouldBlock blockingBehavior) {
+	if c.isStopping() || c.connStore.isClosed() {
+		return
+	}
+
+	conn, err := c.connStore.getConnection(peer)
+	if err != nil {
+		c.logger.Errorf("Failed to send message to %s@%s, error: %s.", peer.PKIID.String(), peer.Endpoint, err.Error())
+		return
+	} else {
+		onErr := func(err error) {
+			c.logger.Errorf("Failed to send message to %s@%s, error: %s, we would disconnect from this peer.", peer.PKIID.String(), peer.Endpoint, err.Error())
+			c.disconnect(peer.PKIID)
+		}
+		conn.send(msg, onErr, shouldBlock)
+		return
+	}
+}
 
 func (c *commImpl) createConnection(endpoint string, expectedPKIID utils.PKIidType) (*connection, error) {
 	var dialOpts []grpc.DialOption
@@ -598,25 +618,6 @@ func (c *commImpl) closeSubscriptions() {
 	defer c.mutex.Unlock()
 	for _, ch := range c.subscriptions {
 		close(ch)
-	}
-}
-
-func (c *commImpl) sendToEndpoint(peer *RemotePeer, msg *protoext.SignedGossipMessage, shouldBlock blockingBehavior) {
-	if c.isStopping() {
-		return
-	}
-
-	conn, err := c.connStore.getConnection(peer)
-	if err != nil {
-		c.logger.Errorf("Failed to send message to %s@%s, error: %s.", peer.PKIID.String(), peer.Endpoint, err.Error())
-		return
-	} else {
-		onErr := func(err error) {
-			c.logger.Errorf("Failed to send message to %s@%s, error: %s, we would disconnect from this peer.", peer.PKIID.String(), peer.Endpoint, err.Error())
-			c.disconnect(peer.PKIID)
-		}
-		conn.send(msg, onErr, shouldBlock)
-		return
 	}
 }
 
