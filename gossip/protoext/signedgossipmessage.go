@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"github.com/11090815/mayy/common/errors"
+	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 	"google.golang.org/protobuf/proto"
 )
 
 type SignFuncType func(msg []byte) ([]byte, error)
 
-type VerifyFuncType func(peerIdentity, signature, message []byte) error
+type VerifyFuncType func(peerIdentity utils.PeerIdentityType, signature, message []byte) error
 
 type SignedGossipMessage struct {
 	*pgossip.Envelope
@@ -43,7 +44,7 @@ func (sgm *SignedGossipMessage) Sign(signFunc SignFuncType) (*pgossip.Envelope, 
 	return envelope, nil
 }
 
-func (sgm *SignedGossipMessage) Verify(peerIdentity []byte, verifyFunc VerifyFuncType) error {
+func (sgm *SignedGossipMessage) Verify(peerIdentity utils.PeerIdentityType, verifyFunc VerifyFuncType) error {
 	if sgm.Envelope == nil {
 		return errors.NewError("missing envelope")
 	}
@@ -61,69 +62,64 @@ func (sgm *SignedGossipMessage) IsSigned() bool {
 }
 
 func (sgm *SignedGossipMessage) String() string {
-	envelope := "Nil-Envelope"
-	if sgm.Envelope != nil {
-		var secretEnvelope string
-		if sgm.SecretEnvelope != nil {
-			secretEnvelopePayloadLen := len(sgm.SecretEnvelope.Payload)
-			secretEnvelopeSignatureLen := len(sgm.SecretEnvelope.Signature)
-			secretEnvelope = fmt.Sprintf("{SecretEnvelope | Payload: %dbytes; Signature %dbytes}", secretEnvelopePayloadLen, secretEnvelopeSignatureLen)
-		}
-		if secretEnvelope != "" {
-			envelope = fmt.Sprintf("{{Envelope | Payload: %dbytes; Signature: %dbytes} %s}", len(sgm.Envelope.Payload), len(sgm.Envelope.Signature), secretEnvelope)
-		} else {
-			envelope = fmt.Sprintf("{Envelope | Payload: %dbytes; Signature: %dbytes}", len(sgm.Envelope.Payload), len(sgm.Envelope.Signature))
-		}
-	}
+	envelope := EnvelopeToString(sgm.Envelope)
 
-	gossipMessage := "Nil-GossipMessage"
-	var isSimple bool = false
-	if sgm.GossipMessage != nil {
-		if sgm.GetRemoteStateRes() != nil {
-			gossipMessage = RemoteStateResponseToString(sgm.GetRemoteStateRes())
-		} else if sgm.GetDataMsg() != nil && sgm.GetDataMsg().Payload != nil {
-			gossipMessage = PayloadToString(sgm.GetDataMsg().Payload)
-		} else if sgm.GetDataUpdate() != nil {
-			gossipMessage = DataUpdateToString(sgm.GetDataUpdate())
-		} else if sgm.GetMemRes() != nil {
-			gossipMessage = MembershipResponseToString(sgm.GetMemRes())
-		} else if sgm.GetStateInfoSnapshot() != nil {
-			gossipMessage = StateInfoSnapshotToString(sgm.GetStateInfoSnapshot())
-		} else if sgm.GetRemotePvtDataRes() != nil {
-			gossipMessage = RemotePvtDataResponseToString(sgm.GetRemotePvtDataRes())
-		} else if sgm.GetAliveMsg() != nil {
-			gossipMessage = AliveMessageToString(sgm.GetAliveMsg())
-		} else if sgm.GetMemReq() != nil {
-			gossipMessage = MembershipRequestToString(sgm.GetMemReq())
-		} else if sgm.GetStateInfoPullReq() != nil {
-			gossipMessage = StateInfoPullRequestToString(sgm.GetStateInfoPullReq())
-		} else if sgm.GetStateInfo() != nil {
-			gossipMessage = StateInfoToString(sgm.GetStateInfo())
-		} else if sgm.GetDataDig() != nil {
-			gossipMessage = DataDigestToString(sgm.GetDataDig())
-		} else if sgm.GetDataReq() != nil {
-			gossipMessage = DataRequestToString(sgm.GetDataReq())
-		} else if sgm.GetLeadershipMsg() != nil {
-			gossipMessage = LeadershipMessageToString(sgm.GetLeadershipMsg())
-		} else if sgm.GetConnEstablish() != nil {
-			gossipMessage = ConnEstablishToString(sgm.GetConnEstablish())
-		} else if sgm.GetDataMsg() != nil {
-			gossipMessage = DataMessageToString(sgm.GetDataMsg())
-		} else {
-			gossipMessage = sgm.GossipMessage.String()
-			isSimple = true
-		}
-		if !isSimple {
-			description := fmt.Sprintf("{Description | Channel: %s, Nonce: %d, Tag: %s}", ChannelToString(sgm.Channel), sgm.Nonce, sgm.Tag.String())
-			gossipMessage = fmt.Sprintf("{%s %s}", description, gossipMessage)
-		}
-	}
+	gossipMessage := GossipMessageToString(sgm.GossipMessage)
 
 	return fmt.Sprintf("{SignedGossipMessage | GossipMessage: %s; Envelope: %s}", gossipMessage, envelope)
 }
 
+func GossipMessageToString(gm *pgossip.GossipMessage) string {
+	gossipMessage := "<nil>"
+	var isSimple bool = false
+	if gm != nil {
+		if gm.GetRemoteStateRes() != nil {
+			gossipMessage = RemoteStateResponseToString(gm.GetRemoteStateRes())
+		} else if gm.GetDataMsg() != nil && gm.GetDataMsg().Payload != nil {
+			gossipMessage = PayloadToString(gm.GetDataMsg().Payload)
+		} else if gm.GetDataUpdate() != nil {
+			gossipMessage = DataUpdateToString(gm.GetDataUpdate())
+		} else if gm.GetMemRes() != nil {
+			gossipMessage = MembershipResponseToString(gm.GetMemRes())
+		} else if gm.GetStateInfoSnapshot() != nil {
+			gossipMessage = StateInfoSnapshotToString(gm.GetStateInfoSnapshot())
+		} else if gm.GetRemotePvtDataRes() != nil {
+			gossipMessage = RemotePvtDataResponseToString(gm.GetRemotePvtDataRes())
+		} else if gm.GetAliveMsg() != nil {
+			gossipMessage = AliveMessageToString(gm.GetAliveMsg())
+		} else if gm.GetMemReq() != nil {
+			gossipMessage = MembershipRequestToString(gm.GetMemReq())
+		} else if gm.GetStateInfoPullReq() != nil {
+			gossipMessage = StateInfoPullRequestToString(gm.GetStateInfoPullReq())
+		} else if gm.GetStateInfo() != nil {
+			gossipMessage = StateInfoToString(gm.GetStateInfo())
+		} else if gm.GetDataDig() != nil {
+			gossipMessage = DataDigestToString(gm.GetDataDig())
+		} else if gm.GetDataReq() != nil {
+			gossipMessage = DataRequestToString(gm.GetDataReq())
+		} else if gm.GetLeadershipMsg() != nil {
+			gossipMessage = LeadershipMessageToString(gm.GetLeadershipMsg())
+		} else if gm.GetConnEstablish() != nil {
+			gossipMessage = ConnEstablishToString(gm.GetConnEstablish())
+		} else if gm.GetDataMsg() != nil {
+			gossipMessage = DataMessageToString(gm.GetDataMsg())
+		} else {
+			gossipMessage = gm.String()
+			isSimple = true
+		}
+		if !isSimple {
+			description := fmt.Sprintf("{Description | Channel: %s, Nonce: %d, Tag: %s}", ChannelToString(gm.Channel), gm.Nonce, gm.Tag.String())
+			gossipMessage = fmt.Sprintf("{%s %s}", description, gossipMessage)
+		}
+	}
+
+	return gossipMessage
+}
+
 /* ------------------------------------------------------------------------------------------ */
 
+// SignSecret 仅仅就是将 internal endpoint 作为签名信息进行签名，然后将签名信息和签名作为 SecretEnvelope 结构体的
+// 两个字段。
 func SignSecret(envelope *pgossip.Envelope, signFunc SignFuncType, secret *pgossip.Secret) error {
 	payload, err := proto.Marshal(secret)
 	if err != nil {

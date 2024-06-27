@@ -421,8 +421,8 @@ func (c *commImpl) Stop() {
 		close(c.exitCh)
 		c.stopWg.Wait()
 		c.closeSubscriptions()
-		c.logger.Info("Stopping comm instance.")
 		atomic.StoreInt32(&c.stopping, 1)
+		c.logger.Infof("Closing comm instance, then, disconnect from %d peers.", c.connStore.connNum())
 	})
 
 }
@@ -597,7 +597,7 @@ func (c *commImpl) authenticateRemotePeer(stream stream, initiator, isProbe bool
 		}
 	}
 
-	verifier := func(peerIdentity []byte, signature, message []byte) error {
+	verifier := func(peerIdentity utils.PeerIdentityType, signature, message []byte) error {
 		pkiID := c.idMapper.GetPKIidOfCert(peerIdentity)
 		return c.idMapper.Verify(pkiID, signature, message)
 	}

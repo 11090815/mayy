@@ -109,9 +109,6 @@ func (cs *connStore) unlockPeer(pkiID utils.PKIidType) {
 	destinationLock, exists := cs.destinationLocks[pkiID.String()]
 	if exists {
 		destinationLock.Unlock()
-		// cs.mutex.Lock()
-		// delete(cs.destinationLocks, pkiID.String())
-		// cs.mutex.Unlock()
 	}
 }
 
