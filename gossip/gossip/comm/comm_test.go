@@ -342,7 +342,7 @@ func TestMutualParallelSendWithAck(t *testing.T) {
 	defer comm2.Stop()
 
 	acceptData := func(msg any) bool {
-		m := msg.(protoext.ReceivedMessage).GetGossipMessage()
+		m := msg.(protoext.ReceivedMessage).GetSignedGossipMessage()
 		return m.GetDataMsg() != nil
 	}
 
@@ -694,7 +694,7 @@ func TestResponses(t *testing.T) {
 		wg.Done()
 		for m := range ch1 {
 			reply := createGossipMsg()
-			reply.Nonce = m.GetGossipMessage().Nonce + 1
+			reply.Nonce = m.GetSignedGossipMessage().Nonce + 1
 			m.Respond(reply.GossipMessage)
 		}
 	}()
@@ -708,7 +708,7 @@ func TestResponses(t *testing.T) {
 	case <-timer.C:
 		require.Fail(t, "Haven't got response from comm1 within a timely manner")
 	case resp := <-ch2:
-		require.Equal(t, expectedNonce, resp.GetGossipMessage().Nonce)
+		require.Equal(t, expectedNonce, resp.GetSignedGossipMessage().Nonce)
 	}
 }
 
@@ -717,10 +717,10 @@ func TestAccept(t *testing.T) {
 	comm2, port2 := newCommInstance(t, mockSP)
 
 	evenNONCESelector := func(m any) bool {
-		return m.(protoext.ReceivedMessage).GetGossipMessage().Nonce%2 == 0
+		return m.(protoext.ReceivedMessage).GetSignedGossipMessage().Nonce%2 == 0
 	}
 	oddNONCESelector := func(m any) bool {
-		return m.(protoext.ReceivedMessage).GetGossipMessage().Nonce%2 != 0
+		return m.(protoext.ReceivedMessage).GetSignedGossipMessage().Nonce%2 != 0
 	}
 
 	evenNONCES1 := comm1.Accept(evenNONCESelector)
@@ -739,9 +739,9 @@ func TestAccept(t *testing.T) {
 
 	readIntoSlice := func(a *[]uint64, out chan<- uint64, ch <-chan protoext.ReceivedMessage) {
 		for m := range ch {
-			*a = append(*a, m.GetGossipMessage().GetNonce())
+			*a = append(*a, m.GetSignedGossipMessage().GetNonce())
 			select {
-			case out <- m.GetGossipMessage().Nonce:
+			case out <- m.GetSignedGossipMessage().Nonce:
 			default:
 			}
 		}
@@ -808,7 +808,7 @@ func TestReConnections(t *testing.T) {
 			if msg == nil {
 				return
 			}
-			out <- msg.GetGossipMessage().GetNonce()
+			out <- msg.GetSignedGossipMessage().GetNonce()
 		}
 	}
 
@@ -969,7 +969,7 @@ func TestSendBadEnvelope(t *testing.T) {
 
 	select {
 	case goodMsgReceived := <-inc:
-		require.Equal(t, goodMsgReceived.GetGossipMessage().Payload, goodMsg.Envelope.Payload)
+		require.Equal(t, goodMsgReceived.GetSignedGossipMessage().Payload, goodMsg.Envelope.Payload)
 	case <-time.After(time.Second * 3):
 		require.Fail(t, "Didn't receive message within a timely manner")
 		return

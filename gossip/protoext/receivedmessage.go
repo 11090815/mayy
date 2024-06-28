@@ -11,8 +11,8 @@ type ReceivedMessage interface {
 	// Respond 给发送此 ReceivedMessage 消息的人发送一个 GossipMessage。
 	Respond(msg *pgossip.GossipMessage)
 
-	// GetGossipMessage 返回此 ReceivedMessage 底层的 GossipMessage。
-	GetGossipMessage() *SignedGossipMessage
+	// GetSignedGossipMessage 返回此 ReceivedMessage 底层的 GossipMessage。
+	GetSignedGossipMessage() *SignedGossipMessage
 
 	// GetSourceEnvelope 返回此 ReceivedMessage 内部的 Envelope。
 	GetSourceEnvelope() *pgossip.Envelope

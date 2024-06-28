@@ -23,7 +23,7 @@ func (m *ReceivedMessageImpl) Respond(msg *pgossip.GossipMessage) {
 	m.conn.send(smsg, func(err error) {}, blockingSend)
 }
 
-func (m *ReceivedMessageImpl) GetGossipMessage() *protoext.SignedGossipMessage {
+func (m *ReceivedMessageImpl) GetSignedGossipMessage() *protoext.SignedGossipMessage {
 	return m.SignedGossipMessage
 }
 
@@ -37,7 +37,7 @@ func (m *ReceivedMessageImpl) Ack(err error) {
 		errStr = err.Error()
 	}
 	ackMsg := &pgossip.GossipMessage{
-		Nonce: m.GetGossipMessage().Nonce,
+		Nonce: m.GetSignedGossipMessage().Nonce,
 		Content: &pgossip.GossipMessage_Ack{
 			Ack: &pgossip.Acknowledgement{
 				Error: errStr,

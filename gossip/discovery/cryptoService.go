@@ -95,8 +95,6 @@ func (dsa *discoverySecurityAdapter) SignMessage(gm *pgossip.GossipMessage, inte
 	return envelope
 }
 
-/* ------------------------------------------------------------------------------------------ */
-
 func (dsa *discoverySecurityAdapter) validateAliveMsgSignature(sgm *protoext.SignedGossipMessage, identity utils.PeerIdentityType) bool {
 	verifier := func(identity utils.PeerIdentityType, signature, message []byte) error {
 		return dsa.messageCryptoService.Verify(identity, signature, message)
