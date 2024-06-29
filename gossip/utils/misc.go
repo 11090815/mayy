@@ -72,3 +72,12 @@ func IndexInSlice(array any, o any, equals Equals) int {
 	}
 	return -1
 }
+
+func Contains(a string, b []string) bool {
+	for _, c := range b {
+		if a == c {
+			return true
+		}
+	}
+	return false
+}

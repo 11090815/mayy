@@ -10,6 +10,8 @@ import (
 // invalidationTrigger 当 messageA 因为 messageB 而失效时，会调用 messageA 上的这个触发器。
 type invalidationTrigger func(msg any)
 
+var NoopTrigger = func(msg any) {}
+
 var noopLock = func() {}
 
 type MessageStore interface {
