@@ -127,8 +127,6 @@ message AliveMessage {
 message MembershipRequest {
     // SelfInformation 字段包含了关于自身的信息。
     Envelope self_information = 1;
-    // Known 包含了自己已知对等体的信息。
-    repeated bytes known = 2;
 }
 
 // MembershipResponse 结构体用于响应成员请求。

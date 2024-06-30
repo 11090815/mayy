@@ -81,3 +81,10 @@ func Contains(a string, b []string) bool {
 	}
 	return false
 }
+
+func GetRandomIndices(indiceCount, highestIndex int) []int {
+	if highestIndex+1 < indiceCount {
+		return nil
+	}
+	return random.Perm(highestIndex+1)[:indiceCount]
+}

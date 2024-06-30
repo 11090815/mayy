@@ -64,7 +64,8 @@ func MembershipRequestToString(mr *pgossip.MembershipRequest) string {
 	if mr == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("{MembershipRequest | Known: %d}", len(mr.Known))
+	sgm, _ := EnvelopeToSignedGossipMessage(mr.SelfInformation)
+	return fmt.Sprintf("{MembershipRequest | SelfInformation: %s}", AliveMessageToString(sgm.GetAliveMsg()))
 }
 
 func StateInfoPullRequestToString(sipr *pgossip.StateInfoPullRequest) string {
@@ -189,4 +190,11 @@ func SecretEnvelopeToString(se *pgossip.SecretEnvelope) string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("{SecretEnvelope | Payload: %dbytes; Signature: %dbytes}", len(se.Payload), len(se.Signature))
+}
+
+func PeerTimeToString(pt *pgossip.PeerTime) string {
+	if pt == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("{PeerTime | IncNum: %d; SeqNum: %d}", pt.IncNum, pt.SeqNum)
 }

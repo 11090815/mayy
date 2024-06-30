@@ -1,6 +1,8 @@
 package discovery
 
 import (
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -32,4 +34,23 @@ func TestOnceDo(t *testing.T) {
 	if comm.once.done == 1 {
 		t.Log("测试成功")
 	}
+}
+
+type Obj struct {
+	mu *sync.Mutex
+}
+
+func (o Obj) Lock() {o.mu.Lock()}
+func (o Obj) Unlock() {o.mu.Unlock()}
+func (o Obj) Do() {fmt.Println("do something")}
+
+func TestCopyLock(t *testing.T) {
+	o := Obj{mu: &sync.Mutex{}}
+	o.Lock()
+	o.Do()
+	o.Unlock()
+
+	o.Lock()
+	o.Do()
+	o.Unlock()
 }
