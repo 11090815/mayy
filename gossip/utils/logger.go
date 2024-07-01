@@ -7,7 +7,8 @@ import (
 )
 
 const (
-	CommLogger = "gossip.comm"
+	CommLogger      = "gossip.comm"
+	DiscoveryLogger = "gossip.discovery"
 )
 
 var (

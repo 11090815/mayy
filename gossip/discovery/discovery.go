@@ -472,7 +472,7 @@ type DiscoveryConfig struct {
 	ReconnectInterval            time.Duration
 	MaxConnectAttempts           int
 	MsgExpirationFactor          int
-	BotstrapPeers                []string
+	BootstrapPeers               []string
 }
 
 func NewDiscoveryService(self NetworkMember, adapter DiscoveryAdapter, crypt CryptoService, policy DisclosurePolicy,
@@ -499,7 +499,7 @@ func NewDiscoveryService(self NetworkMember, adapter DiscoveryAdapter, crypt Cry
 		aliveMsgExpirationFactor:     config.MsgExpirationFactor,
 		reconnectInterval:            config.ReconnectInterval,
 		aliveExpirationCheckInterval: config.AliveExpirationCheckInterval,
-		bootstrapPeers:               config.BotstrapPeers,
+		bootstrapPeers:               config.BootstrapPeers,
 		maxConnectAttempts:           config.MaxConnectAttempts,
 	}
 
