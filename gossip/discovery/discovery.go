@@ -85,6 +85,10 @@ func (nm NetworkMember) String() string {
 		nm.Endpoint, nm.InternalEndpoint, len(nm.Metadata), nm.PKIid.String(), protoext.PropertiesToString(nm.Properties), protoext.EnvelopeToString(nm.Envelope))
 }
 
+func (nm NetworkMember) SimpleString() string {
+	return fmt.Sprintf("{PKI-ID: %s; Endpoint: %s; InternalEndpoint: %s}", nm.PKIid.String(), nm.Endpoint, nm.InternalEndpoint)
+}
+
 /* ------------------------------------------------------------------------------------------ */
 
 type Members []NetworkMember
@@ -378,19 +382,27 @@ type gossipDiscoveryImpl struct {
 	mutex  *sync.RWMutex
 
 	aliveMembership *protoext.MembershipStore
-	aliveLastTS     map[string]*timestamp // PKIid => *timestamp
-	deadMembership  *protoext.MembershipStore
-	deadLastTS      map[string]*timestamp     // PKIid => *timestamp
-	id2Member       map[string]*NetworkMember // PKIid => *NetworkMember
-	msgStore        *aliveMsgStore
+	// aliveLastTS：PKIid => *timestamp，当在 aliveExpirationTimeout 时间内没收到 peer 节点的 alive 消息时，会将 aliveLastTS 里的
+	// peer 节点时间戳信息移入到 deadLastTS 里。
+	aliveLastTS    map[string]*timestamp
+	deadMembership *protoext.MembershipStore
+	deadLastTS     map[string]*timestamp // PKIid => *timestamp
+	// id2Member：PKIid => *NetworkMember，存储了所有的 peer 节点的信息，无论此 peer 节点的状态是 dead 还是 alive，都会一直被存储在这里。
+	id2Member map[string]*NetworkMember
+	msgStore  *aliveMsgStore
 
-	aliveTimeInterval time.Duration // 每隔这段时间，广播一次自己的 alive 消息
-	// aliveExpirationTimeout x aliveMsgExpirationFactor 得到 alive 消息的过期时间
-	aliveExpirationTimeout       time.Duration // 超过这么长时间没有消息的话，就会断开与此节点之间建立的连接
+	// aliveTimeInterval 每隔这段时间，广播一次自己的 alive 消息
+	aliveTimeInterval time.Duration
+	// aliveExpirationTimeout 仅仅 aliveExpirationTimeout 的作用是：超过这么长时间没有收到某个 peer 节点的 alive 消息的话，
+	// 就会断开与此节点之间建立的连接，aliveExpirationTimeout x aliveMsgExpirationFactor 是 alive 消息的过期时间，alive 消
+	// 息的过期时间一到，就会将存储在 msgStore 里的过期 alive 消息删除掉。
+	aliveExpirationTimeout       time.Duration
 	aliveMsgExpirationFactor     int
 	aliveExpirationCheckInterval time.Duration
 	reconnectInterval            time.Duration
 
+	// disclosurePolicy 根据 peer 节点的信息，决定是否给该 peer 节点发送 MembershipResponse 消息，以及即便应该发送 response 消息，
+	// 也会决定要发送哪些 Membership 信息。
 	disclosurePolicy DisclosurePolicy
 
 	maxConnectAttempts int
@@ -715,10 +727,10 @@ func (gdi *gossipDiscoveryImpl) periodicalReconnectToDead() {
 			go func(nm NetworkMember) {
 				defer wg.Done()
 				if gdi.adapter.Ping(&nm) {
-					gdi.logger.Debugf("Member %s is responding, we can send membership request to it.", nm.String())
+					gdi.logger.Debugf("Member %s is responding, we can send membership request to it.", nm.SimpleString())
 					gdi.sendMembershipRequestWithoutAck(&nm, true)
 				} else {
-					gdi.logger.Debugf("Member %s is still dead.", nm.String())
+					gdi.logger.Debugf("Member %s is still dead.", nm.SimpleString())
 				}
 			}(member)
 		}
@@ -732,11 +744,8 @@ func (gdi *gossipDiscoveryImpl) periodicalCheckAlive() {
 	for !gdi.closed() {
 		time.Sleep(gdi.aliveExpirationCheckInterval)
 		dead := gdi.getDeadMembers()
-		if len(dead) > 1 {
-			gdi.logger.Debugf("There are %d dead members in this view.", len(dead))
-			gdi.expireDeadMembers(dead)
-		} else if len(dead) > 0 {
-			gdi.logger.Debug("There is 1 dead member in this view.")
+		if len(dead) > 0 {
+			gdi.logger.Debugf("There are %d dead member(s) in this view.", len(dead))
 			gdi.expireDeadMembers(dead)
 		}
 	}

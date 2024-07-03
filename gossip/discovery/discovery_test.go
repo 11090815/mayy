@@ -31,6 +31,7 @@ var (
 		MsgExpirationFactor:          DefaultMsgExpirationFactor,
 	}
 
+	// noopPolicy 不做任何过滤操作，不论是谁发出 request 请求，都会将 response 原封不动的反馈给它。
 	noopPolicy = func(remotePeer *NetworkMember) (Sieve, EnvelopeFilter) {
 		return func(message *protoext.SignedGossipMessage) bool {
 				return true
@@ -385,12 +386,13 @@ func createDiscoveryInstanceThatGossips(port int, id string, bootstrapPeers []st
 	return createDiscoveryInstanceThatGossipsWithInterceptors(port, id, bootstrapPeers, shouldGossip, policy, func(sgm *protoext.SignedGossipMessage) {}, config)
 }
 
+// interceptor 将别人广播来的消息用 interceptor 截获并处理一下。
 func createDiscoveryInstanceThatGossipsWithInterceptors(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, f func(*protoext.SignedGossipMessage), config DiscoveryConfig) *gossipInstance {
 	mockTracker := &mockAnchorPeerTracker{}
 	return createDiscoveryInstanceWithAnchorPeerTracker(port, id, bootstrapPeers, shouldGossip, policy, f, config, mockTracker, nil)
 }
 
-func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, f func(*protoext.SignedGossipMessage), config DiscoveryConfig, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) *gossipInstance {
+func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, fn func(*protoext.SignedGossipMessage), config DiscoveryConfig, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) *gossipInstance {
 	comm := &mockCommModule{
 		conns:          make(map[string]*grpc.ClientConn),
 		streams:        make(map[string]pgossip.Gossip_GossipStreamClient),
@@ -436,7 +438,7 @@ func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrap
 		Discovery:      discoveryService,
 		listener:       listener,
 		port:           port,
-		msgInterceptor: f,
+		msgInterceptor: fn,
 		stopChan:       make(chan struct{}),
 	}
 
@@ -460,6 +462,37 @@ func waitUntilTimeoutOrFail(t *testing.T, pred func() bool, timeout time.Duratio
 		time.Sleep(timeout / 10)
 	}
 	require.Fail(t, "timeout expired")
+}
+
+func bootPeer(port int) string {
+	return fmt.Sprintf("localhost:%d", port)
+}
+
+func assertMembership(t *testing.T, instances []*gossipInstance, expectedNum int, msg string) {
+	wg := sync.WaitGroup{}
+	wg.Add(len(instances))
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for _, inst := range instances {
+		go func(inst *gossipInstance, ctx context.Context) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(timeout / 10):
+					if len(inst.GetMembership()) == expectedNum {
+						return
+					}
+				}
+			}
+		}(inst, ctx)
+	}
+
+	wg.Wait()
+	require.NoError(t, ctx.Err(), msg)
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -564,4 +597,74 @@ func TestNoSigningIfNoMembership(t *testing.T) {
 	require.Zero(t, atomic.LoadUint32(&inst.comm.signCount))
 	inst.InitiateSync(10000)
 	require.Zero(t, atomic.LoadUint32(&inst.comm.signCount))
+}
+
+func TestValidation(t *testing.T) {
+	// wrapReceivedMessage := func(msg *protoext.SignedGossipMessage) protoext.ReceivedMessage {
+	// 	return &mockReceivedMessage{
+	// 		msg: msg,
+	// 		info: &protoext.ConnectionInfo{
+	// 			ID: utils.PKIidType("testID"),
+	// 		},
+	// 	}
+	// }
+
+	requestMessagesReceived := make(chan *protoext.SignedGossipMessage, 100)
+	responseMessagesReceived := make(chan *protoext.SignedGossipMessage, 100)
+	aliveMessagesReceived := make(chan *protoext.SignedGossipMessage, 5000)
+
+	var membershipRequest atomic.Value
+	var membershipResponseWithAlivePeers atomic.Value
+	var membershipResponseWithDeadPeers atomic.Value
+
+	recordMembershipRequest := func(req *protoext.SignedGossipMessage) {
+		msg, _ := protoext.EnvelopeToSignedGossipMessage(req.GetMemReq().SelfInformation)
+		membershipRequest.Store(msg)
+		requestMessagesReceived <- msg
+	}
+
+	recordMembershipResponse := func(res *protoext.SignedGossipMessage) {
+		memRes := res.GetMemRes()
+		if len(memRes.Alive) > 0 {
+			membershipResponseWithAlivePeers.Store(res)
+		}
+		if len(memRes.Dead) > 0 {
+			membershipResponseWithDeadPeers.Store(res)
+		}
+		responseMessagesReceived <- res
+	}
+
+	interceptor := func(msg *protoext.SignedGossipMessage) {
+		if memReq := msg.GetMemReq(); memReq != nil {
+			recordMembershipRequest(msg)
+		}
+		if memRes := msg.GetMemRes(); memRes != nil {
+			recordMembershipResponse(msg)
+		}
+		// 不是 req，也不是 res，那就是 alive
+		aliveMessagesReceived <- msg
+	}
+
+	p1 := createDiscoveryInstanceThatGossipsWithInterceptors(4675, "p1", []string{bootPeer(4677)}, true, noopPolicy, interceptor, defaultTestConfig)
+	p2 := createDiscoveryInstance(4676, "p2", []string{bootPeer(4675)})
+	p3 := createDiscoveryInstance(4677, "p3", nil)
+	instances := []*gossipInstance{p1, p2, p3}
+
+	assertMembership(t, instances, 2, "signal 2")
+
+	instances = []*gossipInstance{p1, p2}
+	p3.Stop()
+	assertMembership(t, instances, 1, "signal 1")
+	p1.InitiateSync(1)
+
+	waitUntilOrPanic(t, func() bool {
+		return membershipResponseWithDeadPeers.Load() != nil
+	})
+
+	p1.Stop()
+	p2.Stop()
+
+	t.Log("Recorded", len(aliveMessagesReceived), "alive messages")
+	t.Log("Recorded", len(requestMessagesReceived), "request messages")
+	t.Log("Recorded", len(responseMessagesReceived), "response messages")
 }

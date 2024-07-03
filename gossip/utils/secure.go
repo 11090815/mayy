@@ -18,8 +18,8 @@ func (id PKIidType) String() string {
 	if len(id) == 0 {
 		return "<nil>"
 	}
-	// return hex.EncodeToString(id)
-	return string(id)
+	return hex.EncodeToString(id)
+	// return string(id)
 }
 
 // IsNotSameFilter 如果给定的另一个 id 与本 id 不一样，则返回 true。
