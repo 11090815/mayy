@@ -27,14 +27,14 @@ func AliveMessageToString(am *pgossip.AliveMessage) string {
 	}
 	var identity string
 	if len(am.Identity) == 0 {
-		identity = "nil-identity"
+		identity = "<nil>"
 	} else if len(am.Identity) < 32 {
 		identity = hex.EncodeToString(am.Identity)
 	} else {
 		identity = hex.EncodeToString(am.Identity[:8]) + "..." + hex.EncodeToString(am.Identity[len(am.Identity)-8:])
 	}
 
-	return fmt.Sprintf("{AliveMessage | Endpoint: %s; PKI-ID: %s; PeerTime-IncNum: %d; PeerTime-SeqNum: %d; Identity: %s}",
+	return fmt.Sprintf("{AliveMessage | Endpoint: %s; PKI-ID: %s; IncNum: %d; SeqNum: %d; Identity: %s}",
 		am.Membership.Endpoint, hex.EncodeToString(am.Membership.PkiId), am.Timestamp.IncNum, am.Timestamp.SeqNum, identity)
 }
 

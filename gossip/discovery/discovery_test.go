@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/11090815/mayy/common/mlog"
@@ -14,6 +15,7 @@ import (
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,6 +38,8 @@ var (
 				return message.Envelope
 			}
 	}
+
+	timeout = 15 * time.Second
 )
 
 /* ------------------------------------------------------------------------------------------ */
@@ -164,7 +168,7 @@ func (comm *mockCommModule) SendToPeer(peer *NetworkMember, msg *protoext.Signed
 		return
 	}
 	comm.mutex.RLock()
-	conn, exists := comm.streams[peer.Endpoint]
+	_, exists := comm.streams[peer.Endpoint]
 	mock := comm.mock
 	comm.mutex.RUnlock()
 
@@ -181,7 +185,7 @@ func (comm *mockCommModule) SendToPeer(peer *NetworkMember, msg *protoext.Signed
 
 	comm.mutex.Lock()
 	s, _ := protoext.NoopSign(msg.GossipMessage)
-	conn.Send(s.Envelope)
+	comm.streams[peer.Endpoint].Send(s.Envelope)
 	comm.mutex.Unlock()
 	atomic.AddUint32(&comm.msgsSent, 1)
 }
@@ -274,14 +278,11 @@ func (g *gossipInstance) GossipStream(stream pgossip.Gossip_GossipStreamServer) 
 		if err != nil {
 			return err
 		}
-		logger := g.discoveryImpl().logger
 		sgm, err := protoext.EnvelopeToSignedGossipMessage(envelope)
 		if err != nil {
-			logger.Errorf("Failed deserializing GossipMessage from envelope, error: %s.", err.Error())
 			continue
 		}
 		g.msgInterceptor(sgm)
-		logger.Debugf("%s got message: %s.", g.Discovery.Self().Endpoint, sgm.String())
 		g.comm.incMsgs <- &mockReceivedMessage{
 			msg: sgm,
 			info: &protoext.ConnectionInfo{
@@ -289,9 +290,9 @@ func (g *gossipInstance) GossipStream(stream pgossip.Gossip_GossipStreamServer) 
 			},
 		}
 		atomic.AddUint32(&g.comm.msgsReceived, 1)
-		if aliveMsg := sgm.GetAliveMsg(); aliveMsg != nil {
-			g.tryForwardMessage(sgm)
-		}
+		// if aliveMsg := sgm.GetAliveMsg(); aliveMsg != nil {
+		// 	g.tryForwardMessage(sgm)
+		// }
 	}
 }
 
@@ -324,7 +325,6 @@ func (g *gossipInstance) discoveryImpl() *gossipDiscoveryImpl {
 
 func (g *gossipInstance) initiateSync(frequency time.Duration, peerNum int) {
 	g.syncInitiator = time.NewTicker(frequency)
-	g.stopChan = make(chan struct{})
 	go func() {
 		for {
 			select {
@@ -437,10 +437,131 @@ func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrap
 		listener:       listener,
 		port:           port,
 		msgInterceptor: f,
+		stopChan:       make(chan struct{}),
 	}
 
 	pgossip.RegisterGossipServer(s, gInst)
 	go s.Serve(listener)
 
 	return gInst
+}
+
+func waitUntilOrPanic(t *testing.T, pred func() bool) {
+	waitUntilTimeoutOrFail(t, pred, timeout)
+}
+
+func waitUntilTimeoutOrFail(t *testing.T, pred func() bool, timeout time.Duration) {
+	start := time.Now()
+	limit := start.UnixNano() + timeout.Nanoseconds()
+	for time.Now().UnixNano() < limit {
+		if pred() {
+			return
+		}
+		time.Sleep(timeout / 10)
+	}
+	require.Fail(t, "timeout expired")
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+func TestClone(t *testing.T) {
+	nm := &NetworkMember{
+		PKIid: []byte("pkiID"),
+		Properties: &pgossip.Properties{
+			LedgerHeight: 10,
+			LeftChannel:  true,
+			Chaincodes: []*pgossip.Chaincode{
+				{Name: "dscabs", Version: "v1.0.0", Metadata: []byte("metadata")},
+			},
+		},
+		Envelope:         &pgossip.Envelope{Payload: []byte("payload")},
+		Endpoint:         "endpoint",
+		InternalEndpoint: "internalEndpoint",
+		Metadata:         []byte("metadata"),
+	}
+
+	nm2 := nm.Clone()
+
+	require.Equal(t, nm2, *nm)
+	require.False(t, nm2.Properties == nm.Properties)
+	require.False(t, nm2.Envelope == nm.Envelope)
+}
+
+func TestToString(t *testing.T) {
+	nm1 := &NetworkMember{Endpoint: "a", InternalEndpoint: "b"}
+	require.Equal(t, "b", nm1.PreferredEndpoint())
+	nm2 := &NetworkMember{Endpoint: "a"}
+	require.Equal(t, "a", nm2.PreferredEndpoint())
+
+	fmt.Println(nm1.String())
+
+	now := time.Now()
+	ts1 := &timestamp{
+		incTime: now,
+		seqNum:  2,
+	}
+	ts2 := &timestamp{
+		incTime:  now,
+		seqNum:   2,
+		lastSeen: now.Add(-20 * time.Minute),
+	}
+
+	fmt.Println(ts1.String())
+	fmt.Println(ts2.String())
+}
+
+func TestBadInput(t *testing.T) {
+	inst := createDiscoveryInstance(2048, fmt.Sprintf("d%d", 0), []string{})
+	inst.discoveryImpl().handleMsgFromComm(nil)
+	sgm, _ := protoext.NoopSign(&pgossip.GossipMessage{
+		Content: &pgossip.GossipMessage_DataMsg{
+			DataMsg: &pgossip.DataMessage{
+				Payload: &pgossip.Payload{Data: []byte("data")},
+			},
+		},
+	})
+	inst.discoveryImpl().handleMsgFromComm(&mockReceivedMessage{
+		msg: sgm,
+		info: &protoext.ConnectionInfo{
+			ID: []byte("pkiID"),
+		},
+	})
+	inst.Stop()
+}
+
+func TestConnect(t *testing.T) {
+	nodeNum := 5
+	instances := []*gossipInstance{}
+
+	for i := 0; i < nodeNum; i++ {
+		inst := createDiscoveryInstance(2048+i, fmt.Sprintf("node%d", i+1), []string{})
+		instances = append(instances, inst)
+		j := (i + 1) % nodeNum
+		endpoint := fmt.Sprintf("localhost:%d", 2048+j)
+		networkMember2Connect2 := NetworkMember{Endpoint: endpoint, PKIid: []byte(endpoint)}
+		inst.Connect(networkMember2Connect2, func() (*PeerIdentification, error) {
+			return &PeerIdentification{SelfOrg: false, PKIid: nil}, nil
+		})
+		defer inst.Stop()
+	}
+
+	fullMembership := func() bool {
+		finished := true
+		for i := 0; i < nodeNum; i++ {
+			if nodeNum-1 != len(instances[i].discoveryImpl().GetMembership()) {
+				finished = false
+			}
+		}
+		return finished
+	}
+	waitUntilOrPanic(t, fullMembership)
+}
+
+func TestNoSigningIfNoMembership(t *testing.T) {
+	inst := createDiscoveryInstance(2048, "alone", nil)
+	defer inst.Stop()
+	time.Sleep(defaultTestConfig.AliveTimeInterval * 10)
+	require.Zero(t, atomic.LoadUint32(&inst.comm.signCount))
+	inst.InitiateSync(10000)
+	require.Zero(t, atomic.LoadUint32(&inst.comm.signCount))
 }

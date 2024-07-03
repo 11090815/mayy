@@ -54,3 +54,12 @@ func TestCopyLock(t *testing.T) {
 	o.Do()
 	o.Unlock()
 }
+
+func TestLock(t *testing.T) {
+	mutex := &sync.RWMutex{}
+	mutex.RLock()
+	mutex.RLock()
+	mutex.RUnlock()
+	mutex.RUnlock()
+	t.Log("finish")
+}

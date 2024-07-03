@@ -462,7 +462,15 @@ type timestamp struct {
 }
 
 func (ts *timestamp) String() string {
-	return fmt.Sprintf("{timestamp | incTime: %d; seqNum: %d}", ts.incTime.UnixNano(), ts.seqNum)
+	var incTime = "<nil>"
+	var lastSeen = "<nil>"
+	if !ts.incTime.IsZero() {
+		incTime = ts.incTime.Format(time.RFC3339Nano)
+	}
+	if !ts.lastSeen.IsZero() {
+		lastSeen = ts.lastSeen.Format(time.RFC3339Nano)
+	}
+	return fmt.Sprintf("{timestamp | incTime: %s; seqNum: %d; lastSeen: %s}", incTime, ts.seqNum, lastSeen)
 }
 
 type DiscoveryConfig struct {
@@ -539,8 +547,6 @@ func (gdi *gossipDiscoveryImpl) Self() NetworkMember {
 		gdi.logger.Warn("Discovery service is already closed.")
 		return NetworkMember{}
 	}
-	gdi.mutex.RLock()
-	defer gdi.mutex.RUnlock()
 	aliveMsg, _ := gdi.aliveMsgAndInternalEndpoint()
 	envelope, _ := protoext.NoopSign(aliveMsg)
 	clone := gdi.self.Clone()
@@ -564,8 +570,8 @@ func (gdi *gossipDiscoveryImpl) UpdateEndpoint(endpoint string) {
 		return
 	}
 	gdi.mutex.Lock()
-	gdi.mutex.Unlock()
 	gdi.self.Endpoint = endpoint
+	gdi.mutex.Unlock()
 }
 
 func (gdi *gossipDiscoveryImpl) GetMembership() Members {
@@ -666,7 +672,7 @@ func (gdi *gossipDiscoveryImpl) Connect(member NetworkMember, identifier identif
 				gdi.logger.Errorf("Failed creating SignedGossipMessage, error: %s.", err.Error())
 				continue
 			}
-			gdi.sendUntilAcked(peer, signedReq)
+			go gdi.sendUntilAcked(peer, signedReq)
 			return
 		}
 	}()
@@ -710,7 +716,7 @@ func (gdi *gossipDiscoveryImpl) periodicalReconnectToDead() {
 				defer wg.Done()
 				if gdi.adapter.Ping(&nm) {
 					gdi.logger.Debugf("Member %s is responding, we can send membership request to it.", nm.String())
-					gdi.sendMembershipRequestWithoutAck(&member, true)
+					gdi.sendMembershipRequestWithoutAck(&nm, true)
 				} else {
 					gdi.logger.Debugf("Member %s is still dead.", nm.String())
 				}
@@ -730,7 +736,7 @@ func (gdi *gossipDiscoveryImpl) periodicalCheckAlive() {
 			gdi.logger.Debugf("There are %d dead members in this view.", len(dead))
 			gdi.expireDeadMembers(dead)
 		} else if len(dead) > 0 {
-			gdi.logger.Debug("There is one dead member in this view.")
+			gdi.logger.Debug("There is 1 dead member in this view.")
 			gdi.expireDeadMembers(dead)
 		}
 	}
@@ -788,7 +794,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 	}
 
 	sgm := msg.GetSignedGossipMessage()
-	if sgm.GetAliveMsg() == nil || sgm.GetMemReq() == nil || sgm.GetMemRes() == nil {
+	if sgm.GetAliveMsg() == nil && sgm.GetMemReq() == nil && sgm.GetMemRes() == nil {
 		gdi.logger.Warnf("Discovery service only accepts AliveMessage or MembershipRequest or MembershipResponse message, but got: %s.", sgm.String())
 		return
 	}
@@ -979,6 +985,8 @@ func (gdi *gossipDiscoveryImpl) sendUntilAcked(peer *NetworkMember, msg *protoex
 		gdi.adapter.SendToPeer(peer, msg)
 		if _, timeoutErr := subscription.Listen(); timeoutErr == nil {
 			return
+		} else {
+			gdi.logger.Error("timeout expired")
 		}
 		time.Sleep(gdi.reconnectInterval)
 	}
@@ -1073,13 +1081,23 @@ func (gdi *gossipDiscoveryImpl) learnExistingMembers(aliveArr []*protoext.Signed
 			continue
 		}
 
-		if _, isKnownAsAlive := gdi.aliveLastTS[pkiID.String()]; !isKnownAsAlive {
+		if oldTS, isKnownAsAlive := gdi.aliveLastTS[pkiID.String()]; !isKnownAsAlive {
 			gdi.logger.Warnf("The member %s is not alive.", protoext.MemberToString(am.Membership))
 			continue
 		} else {
-			gdi.logger.Debugf("Update alive member: %s.", protoext.AliveMessageToString(am))
-			gdi.aliveLastTS[pkiID.String()].incTime = tsToTime(am.Timestamp.IncNum)
-			gdi.aliveLastTS[pkiID.String()].seqNum = am.Timestamp.SeqNum
+			var changed bool = false
+			newIncTime := tsToTime(am.Timestamp.IncNum)
+			if !oldTS.incTime.Equal(newIncTime) {
+				changed = true
+				oldTS.incTime = newIncTime
+			}
+			if oldTS.seqNum != am.Timestamp.SeqNum {
+				changed = true
+				oldTS.seqNum = am.Timestamp.SeqNum
+			}
+			if changed {
+				gdi.logger.Debugf("Update alive member: %s.", protoext.AliveMessageToString(am))
+			}
 			gdi.aliveLastTS[pkiID.String()].lastSeen = time.Now()
 
 			if old := gdi.aliveMembership.MsgByID(pkiID); old != nil {

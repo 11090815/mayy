@@ -76,7 +76,7 @@ func GossipMessageToString(gm *pgossip.GossipMessage) string {
 		if gm.GetRemoteStateRes() != nil {
 			gossipMessage = RemoteStateResponseToString(gm.GetRemoteStateRes())
 		} else if gm.GetDataMsg() != nil && gm.GetDataMsg().Payload != nil {
-			gossipMessage = PayloadToString(gm.GetDataMsg().Payload)
+			gossipMessage = DataMessageToString(gm.GetDataMsg())
 		} else if gm.GetDataUpdate() != nil {
 			gossipMessage = DataUpdateToString(gm.GetDataUpdate())
 		} else if gm.GetMemRes() != nil {
