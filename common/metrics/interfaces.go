@@ -2,6 +2,7 @@ package metrics
 
 type Provider interface {
 	NewCounter(CounterOpts) Counter
+	NewGauge(GaugeOpts) Gauge
 }
 
 /* ------------------------------------------------------------------------------------------ */

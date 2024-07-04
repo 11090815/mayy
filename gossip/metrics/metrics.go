@@ -3,12 +3,14 @@ package metrics
 import "github.com/11090815/mayy/common/metrics"
 
 type GossipMetrics struct {
-	CommMetrics *CommMetrics
+	CommMetrics     *CommMetrics
+	ElectionMetrics *ElectionMetrics
 }
 
 func NewGossipMetrics(p metrics.Provider) *GossipMetrics {
 	return &GossipMetrics{
-		CommMetrics: newCommMetrics(p),
+		CommMetrics:     newCommMetrics(p),
+		ElectionMetrics: newElectionMetrics(p),
 	}
 }
 
@@ -51,6 +53,27 @@ func newCommMetrics(p metrics.Provider) *CommMetrics {
 		SentMessages:     p.NewCounter(SentMessagesOpts),
 		BufferOverflow:   p.NewCounter(BufferOverflowOpts),
 		ReceivedMessages: p.NewCounter(ReceivedMessagesOpts),
+	}
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type ElectionMetrics struct {
+	Declaration metrics.Gauge
+}
+
+var LeaderDeclarationOpts = metrics.GaugeOpts{
+	Namespace:    "gossip",
+	Subsystem:    "leader_election",
+	Name:         "leader",
+	Help:         "Peer is leader (1) or follower (0)",
+	LabelNames:   []string{"channel"},
+	StatsdFormat: "%{#fqname}.%{channel}",
+}
+
+func newElectionMetrics(p metrics.Provider) *ElectionMetrics {
+	return &ElectionMetrics{
+		Declaration: p.NewGauge(LeaderDeclarationOpts),
 	}
 }
 
