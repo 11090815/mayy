@@ -3,12 +3,11 @@ package comm
 import (
 	"fmt"
 
-	"github.com/11090815/mayy/gossip/protoext"
 	"github.com/11090815/mayy/gossip/utils"
 )
 
 type (
-	sendFunc func(peer *RemotePeer, msg *protoext.SignedGossipMessage)
+	sendFunc func(peer *RemotePeer, msg *utils.SignedGossipMessage)
 	waitFunc func(*RemotePeer) error
 )
 
@@ -24,7 +23,7 @@ func newAckSendOperation(snd sendFunc, waitForAck waitFunc) *ackSendOperation {
 	}
 }
 
-func (aso *ackSendOperation) send(msg *protoext.SignedGossipMessage, minAckNum int, peers ...*RemotePeer) []SendResult {
+func (aso *ackSendOperation) send(msg *utils.SignedGossipMessage, minAckNum int, peers ...*RemotePeer) []SendResult {
 	successAcks := 0
 	results := []SendResult{}
 
@@ -62,8 +61,8 @@ func (aso *ackSendOperation) send(msg *protoext.SignedGossipMessage, minAckNum i
 	return results
 }
 
-func interceptAcks(nextHandler handler, remotePeerID utils.PKIidType, pubsub *utils.PubSub) func(*protoext.SignedGossipMessage) {
-	return func(sgm *protoext.SignedGossipMessage) {
+func interceptAcks(nextHandler handler, remotePeerID utils.PKIidType, pubsub *utils.PubSub) func(*utils.SignedGossipMessage) {
+	return func(sgm *utils.SignedGossipMessage) {
 		if sgm.GossipMessage.GetAck() != nil {
 			topic := topicForAck(sgm.GossipMessage.Nonce, remotePeerID)
 			pubsub.Publish(topic, sgm.GossipMessage.GetAck())

@@ -4,13 +4,12 @@ import (
 	"time"
 
 	"github.com/11090815/mayy/common/mlog"
-	"github.com/11090815/mayy/gossip/protoext"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 )
 
 type CryptoService interface {
-	ValidateAliveMsg(message *protoext.SignedGossipMessage) bool
+	ValidateAliveMsg(message *utils.SignedGossipMessage) bool
 
 	SignMessage(m *pgossip.GossipMessage, internalEndpoint string) *pgossip.Envelope
 }
@@ -36,10 +35,10 @@ func newDiscoverySecurityAdapter(identity utils.PeerIdentityType, iip time.Time,
 	}
 }
 
-func (dsa *discoverySecurityAdapter) ValidateAliveMsg(sgm *protoext.SignedGossipMessage) bool {
+func (dsa *discoverySecurityAdapter) ValidateAliveMsg(sgm *utils.SignedGossipMessage) bool {
 	aliveMsg := sgm.GetAliveMsg()
 	if aliveMsg == nil || aliveMsg.Membership == nil || aliveMsg.Membership.PkiId == nil || !sgm.IsSigned() {
-		dsa.logger.Errorf("Invalid alive message: %s.", protoext.AliveMessageToString(aliveMsg))
+		dsa.logger.Errorf("Invalid alive message: %s.", utils.AliveMessageToString(aliveMsg))
 		return false
 	}
 
@@ -49,15 +48,15 @@ func (dsa *discoverySecurityAdapter) ValidateAliveMsg(sgm *protoext.SignedGossip
 		identity = aliveMsg.Identity
 		claimedPKIID := aliveMsg.Membership.PkiId
 		if err := dsa.idMapper.Put(claimedPKIID, identity); err != nil {
-			dsa.logger.Errorf("Failed validating identity of %s, error: %s.", protoext.AliveMessageToString(aliveMsg), err.Error())
+			dsa.logger.Errorf("Failed validating identity of %s, error: %s.", utils.AliveMessageToString(aliveMsg), err.Error())
 			return false
 		}
 	} else {
 		identity, _ = dsa.idMapper.Get(aliveMsg.Membership.PkiId)
 		if identity != nil {
-			dsa.logger.Debugf("Fetched identity of %s from identity store.", protoext.MemberToString(aliveMsg.Membership))
+			dsa.logger.Debugf("Fetched identity of %s from identity store.", utils.MemberToString(aliveMsg.Membership))
 		} else {
-			dsa.logger.Errorf("Can't fetch certificate for %s.", protoext.AliveMessageToString(aliveMsg))
+			dsa.logger.Errorf("Can't fetch certificate for %s.", utils.AliveMessageToString(aliveMsg))
 			return false
 		}
 	}
@@ -73,12 +72,12 @@ func (dsa *discoverySecurityAdapter) SignMessage(gm *pgossip.GossipMessage, inte
 	if gm.GetAliveMsg() != nil && time.Now().Before(dsa.includeIdentityPeriod) {
 		gm.GetAliveMsg().Identity = dsa.identity
 	}
-	sgm := &protoext.SignedGossipMessage{
+	sgm := &utils.SignedGossipMessage{
 		GossipMessage: gm,
 	}
 	envelope, err := sgm.Sign(signer)
 	if err != nil {
-		dsa.logger.Errorf("Failed signing message %s, error: %s.", protoext.GossipMessageToString(gm), err.Error())
+		dsa.logger.Errorf("Failed signing message %s, error: %s.", utils.GossipMessageToString(gm), err.Error())
 		return nil
 	}
 
@@ -86,7 +85,7 @@ func (dsa *discoverySecurityAdapter) SignMessage(gm *pgossip.GossipMessage, inte
 		return envelope
 	}
 
-	protoext.SignSecret(envelope, signer, &pgossip.Secret{
+	utils.SignSecret(envelope, signer, &pgossip.Secret{
 		Content: &pgossip.Secret_InternalEndpoint{
 			InternalEndpoint: internalEndpoint,
 		},
@@ -95,7 +94,7 @@ func (dsa *discoverySecurityAdapter) SignMessage(gm *pgossip.GossipMessage, inte
 	return envelope
 }
 
-func (dsa *discoverySecurityAdapter) validateAliveMsgSignature(sgm *protoext.SignedGossipMessage, identity utils.PeerIdentityType) bool {
+func (dsa *discoverySecurityAdapter) validateAliveMsgSignature(sgm *utils.SignedGossipMessage, identity utils.PeerIdentityType) bool {
 	verifier := func(identity utils.PeerIdentityType, signature, message []byte) error {
 		return dsa.messageCryptoService.Verify(identity, signature, message)
 	}

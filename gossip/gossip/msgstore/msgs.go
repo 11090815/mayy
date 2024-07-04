@@ -115,12 +115,12 @@ func (impl *messageStoreImpl) Add(message any) bool {
 func (impl *messageStoreImpl) CheckValid(message any) bool {
 	impl.mutex.RLock()
 	defer impl.mutex.RUnlock()
+	
 	for _, stored := range impl.msgs {
 		if impl.policy(message, stored.data) == utils.MessageInvalidated {
 			return false
 		}
 	}
-
 	return true
 }
 

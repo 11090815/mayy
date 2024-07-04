@@ -7,13 +7,12 @@ import (
 	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/metrics"
-	"github.com/11090815/mayy/gossip/protoext"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 	"google.golang.org/grpc"
 )
 
-type handler func(message *protoext.SignedGossipMessage)
+type handler func(message *utils.SignedGossipMessage)
 
 type blockingBehavior bool
 
@@ -137,7 +136,7 @@ func (cs *connStore) isClosed() bool {
 }
 
 // onConnected 关闭到远程对等点的任何连接，并为其创建一个新的连接对象，以便在一对对等点之间只有一个单向连接
-func (cs *connStore) onConnected(serverStream pgossip.Gossip_GossipStreamServer, connInfo *protoext.ConnectionInfo, metrics *metrics.CommMetrics) *connection {
+func (cs *connStore) onConnected(serverStream pgossip.Gossip_GossipStreamServer, connInfo *utils.ConnectionInfo, metrics *metrics.CommMetrics) *connection {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
@@ -169,7 +168,7 @@ type connection struct {
 	recvBuffSize int
 	metrics      *metrics.CommMetrics
 	cancel       context.CancelFunc
-	info         *protoext.ConnectionInfo
+	info         *utils.ConnectionInfo
 	outBuff      chan *msgSending
 	logger       mlog.Logger
 	pkiID        utils.PKIidType
@@ -205,7 +204,7 @@ func (c *connection) close() {
 	})
 }
 
-func (c *connection) send(msg *protoext.SignedGossipMessage, onErr func(error), shouldBlock blockingBehavior) {
+func (c *connection) send(msg *utils.SignedGossipMessage, onErr func(error), shouldBlock blockingBehavior) {
 	m := &msgSending{
 		envelope: msg.Envelope,
 		onErr:    onErr,
@@ -230,7 +229,7 @@ func (c *connection) send(msg *protoext.SignedGossipMessage, onErr func(error), 
 
 func (c *connection) serviceConnection() error {
 	errCh := make(chan error, 1)
-	msgCh := make(chan *protoext.SignedGossipMessage, c.recvBuffSize)
+	msgCh := make(chan *utils.SignedGossipMessage, c.recvBuffSize)
 
 	go c.readFromStream(errCh, msgCh)
 	go c.writeToStream()
@@ -265,7 +264,7 @@ func (c *connection) writeToStream() {
 	}
 }
 
-func (c *connection) readFromStream(errChan chan error, msgChan chan *protoext.SignedGossipMessage) {
+func (c *connection) readFromStream(errChan chan error, msgChan chan *utils.SignedGossipMessage) {
 	stream := c.gossipStream
 	for {
 		select {
@@ -280,7 +279,7 @@ func (c *connection) readFromStream(errChan chan error, msgChan chan *protoext.S
 				return
 			}
 			c.metrics.ReceivedMessages.Add(1)
-			msg, err := protoext.EnvelopeToSignedGossipMessage(envelope)
+			msg, err := utils.EnvelopeToSignedGossipMessage(envelope)
 			if err != nil {
 				errChan <- err
 				c.logger.Warnf("Got an error [%s] when reading from stream.", err.Error())

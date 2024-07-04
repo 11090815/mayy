@@ -15,7 +15,6 @@ import (
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/gossip/comm"
 	"github.com/11090815/mayy/gossip/gossip/msgstore"
-	"github.com/11090815/mayy/gossip/protoext"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 	"google.golang.org/protobuf/proto"
@@ -31,10 +30,10 @@ const (
 )
 
 // EnvelopeFilter 会过滤掉 SignedGossipMessage 中的部分信息得到一个 Envelope。
-type EnvelopeFilter func(message *protoext.SignedGossipMessage) *pgossip.Envelope
+type EnvelopeFilter func(message *utils.SignedGossipMessage) *pgossip.Envelope
 
 // Sieve 决定了是否能将 SignedGossipMessage 发送给远程节点。
-type Sieve func(message *protoext.SignedGossipMessage) bool
+type Sieve func(message *utils.SignedGossipMessage) bool
 
 // DisclosurePolicy 定义了给定的远程对等体是否有资格了解消息，以及从给定的 SignedGossipMessage 中有资格了解哪些消息。
 type DisclosurePolicy func(remotePeer *NetworkMember) (Sieve, EnvelopeFilter)
@@ -82,7 +81,7 @@ func (nm NetworkMember) HasExternalEndpoint() bool {
 
 func (nm NetworkMember) String() string {
 	return fmt.Sprintf("{NetworkMember | Endpoint: %s; InternalEndpoint: %s; Metadata: %dbytes; PKI-ID: %s; Properties: %s; Envelope: %s}",
-		nm.Endpoint, nm.InternalEndpoint, len(nm.Metadata), nm.PKIid.String(), protoext.PropertiesToString(nm.Properties), protoext.EnvelopeToString(nm.Envelope))
+		nm.Endpoint, nm.InternalEndpoint, len(nm.Metadata), nm.PKIid.String(), utils.PropertiesToString(nm.Properties), utils.EnvelopeToString(nm.Envelope))
 }
 
 func (nm NetworkMember) SimpleString() string {
@@ -175,24 +174,24 @@ func (apt *anchorPeerTracker) Update(channelName string, endpoints map[string]st
 
 type DiscoveryAdapter interface {
 	// Gossip 广播。
-	Gossip(msg *protoext.SignedGossipMessage)
+	Gossip(msg *utils.SignedGossipMessage)
 
 	// SendToPeer 单播。
-	SendToPeer(peer *NetworkMember, msg *protoext.SignedGossipMessage)
+	SendToPeer(peer *NetworkMember, msg *utils.SignedGossipMessage)
 
 	Ping(peer *NetworkMember) bool
 
-	Accept() <-chan protoext.ReceivedMessage
+	Accept() <-chan utils.ReceivedMessage
 
 	// ReceiveDiscoveryMessage 接收与 discovery 相关的消息。
-	ReceiveDiscoveryMessage(msg protoext.ReceivedMessage)
+	ReceiveDiscoveryMessage(msg utils.ReceivedMessage)
 
 	PresumedDead() <-chan utils.PKIidType
 
 	CloseConn(peer *NetworkMember)
 
 	// Forward 将消息转发给下一跳。
-	Forward(msg protoext.ReceivedMessage)
+	Forward(msg utils.ReceivedMessage)
 
 	// IdentitySwitch 返回一个通道，此通道内存放证书发生变化的节点的 ID。
 	IdentitySwitch() <-chan utils.PKIidType
@@ -210,16 +209,16 @@ type batchingEmitter interface {
 
 // emittedGossipMessage 封装了签名的 gossip 消息，并在消息转发时使用路由过滤器
 type emittedGossipMessage struct {
-	*protoext.SignedGossipMessage
+	*utils.SignedGossipMessage
 	filter func(id utils.PKIidType) bool
 }
 
 type discoveryAdapter struct {
 	c                comm.Comm
 	presumedDead     chan utils.PKIidType
-	incChan          chan protoext.ReceivedMessage
-	gossipFunc       func(msg *protoext.SignedGossipMessage)
-	forwardFunc      func(msg protoext.ReceivedMessage)
+	incChan          chan utils.ReceivedMessage
+	gossipFunc       func(msg *utils.SignedGossipMessage)
+	forwardFunc      func(msg utils.ReceivedMessage)
 	disclosurePolicy DisclosurePolicy
 	stopping         int32
 	stopOnce         sync.Once
@@ -229,8 +228,8 @@ func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter batchingEmitte
 	adapter := &discoveryAdapter{
 		c:            c,
 		presumedDead: presumedDead,
-		incChan:      make(chan protoext.ReceivedMessage),
-		gossipFunc: func(msg *protoext.SignedGossipMessage) {
+		incChan:      make(chan utils.ReceivedMessage),
+		gossipFunc: func(msg *utils.SignedGossipMessage) {
 			if propagateTimes == 0 {
 				return
 			}
@@ -241,7 +240,7 @@ func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter batchingEmitte
 				},
 			})
 		},
-		forwardFunc: func(msg protoext.ReceivedMessage) {
+		forwardFunc: func(msg utils.ReceivedMessage) {
 			if propagateTimes == 0 {
 				return
 			}
@@ -257,20 +256,20 @@ func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter batchingEmitte
 	return adapter
 }
 
-func (da *discoveryAdapter) Gossip(msg *protoext.SignedGossipMessage) {
+func (da *discoveryAdapter) Gossip(msg *utils.SignedGossipMessage) {
 	if da.closed() {
 		return
 	}
 	da.gossipFunc(msg)
 }
 
-func (da *discoveryAdapter) SendToPeer(peer *NetworkMember, msg *protoext.SignedGossipMessage) {
+func (da *discoveryAdapter) SendToPeer(peer *NetworkMember, msg *utils.SignedGossipMessage) {
 	if da.closed() {
 		return
 	}
 
 	if memReq := msg.GetMemReq(); memReq != nil && len(peer.PKIid) != 0 {
-		selfMsg, err := protoext.EnvelopeToSignedGossipMessage(memReq.SelfInformation)
+		selfMsg, err := utils.EnvelopeToSignedGossipMessage(memReq.SelfInformation)
 		if err != nil {
 			panic(fmt.Sprintf("Tried to send a membership request with a malformed AliveMessage, error: %s.", err.Error()))
 		}
@@ -283,7 +282,7 @@ func (da *discoveryAdapter) SendToPeer(peer *NetworkMember, msg *protoext.Signed
 		msgClone.Content = &pgossip.GossipMessage_MemReq{
 			MemReq: memReq,
 		}
-		if msg, err = protoext.NoopSign(msgClone); err != nil {
+		if msg, err = utils.NoopSign(msgClone); err != nil {
 			return
 		}
 		da.c.Send(msg, &comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
@@ -299,11 +298,11 @@ func (da *discoveryAdapter) Ping(peer *NetworkMember) bool {
 	return da.c.Probe(&comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()}) == nil
 }
 
-func (da *discoveryAdapter) Accept() <-chan protoext.ReceivedMessage {
+func (da *discoveryAdapter) Accept() <-chan utils.ReceivedMessage {
 	return da.incChan
 }
 
-func (da *discoveryAdapter) ReceiveDiscoveryMessage(msg protoext.ReceivedMessage) {
+func (da *discoveryAdapter) ReceiveDiscoveryMessage(msg utils.ReceivedMessage) {
 	da.incChan <- msg
 }
 
@@ -315,7 +314,7 @@ func (da *discoveryAdapter) CloseConn(peer *NetworkMember) {
 	da.c.CloseConn(&comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
 }
 
-func (da *discoveryAdapter) Forward(msg protoext.ReceivedMessage) {
+func (da *discoveryAdapter) Forward(msg utils.ReceivedMessage) {
 	if da.closed() {
 		return
 	}
@@ -366,7 +365,7 @@ type Discovery interface {
 
 type gossipDiscoveryImpl struct {
 	self         NetworkMember
-	selfAliveMsg *protoext.SignedGossipMessage
+	selfAliveMsg *utils.SignedGossipMessage
 	port         int
 	incTime      uint64
 	seqNum       uint64
@@ -381,11 +380,11 @@ type gossipDiscoveryImpl struct {
 	logger mlog.Logger
 	mutex  *sync.RWMutex
 
-	aliveMembership *protoext.MembershipStore
+	aliveMembership *utils.MembershipStore
 	// aliveLastTS：PKIid => *timestamp，当在 aliveExpirationTimeout 时间内没收到 peer 节点的 alive 消息时，会将 aliveLastTS 里的
 	// peer 节点时间戳信息移入到 deadLastTS 里。
 	aliveLastTS    map[string]*timestamp
-	deadMembership *protoext.MembershipStore
+	deadMembership *utils.MembershipStore
 	deadLastTS     map[string]*timestamp // PKIid => *timestamp
 	// id2Member：PKIid => *NetworkMember，存储了所有的 peer 节点的信息，无论此 peer 节点的状态是 dead 还是 alive，都会一直被存储在这里。
 	id2Member map[string]*NetworkMember
@@ -415,31 +414,27 @@ type aliveMsgStore struct {
 }
 
 func newAliveMsgStore(d *gossipDiscoveryImpl) *aliveMsgStore {
-	policy := protoext.NewGossipMessageComparator(0)
+	policy := utils.NewGossipMessageComparator(0)
 	aliveMsgTTL := d.aliveExpirationTimeout * time.Duration(d.aliveMsgExpirationFactor)
 	externalLock := func() { d.mutex.Lock() }
 	externalUnlock := func() { d.mutex.Unlock() }
 
 	callback := func(m any) {
-		msg := m.(*protoext.SignedGossipMessage)
+		msg := m.(*utils.SignedGossipMessage)
 		if msg.GetAliveMsg() == nil {
 			return
 		}
 		membership := msg.GetAliveMsg().Membership
 		id := utils.PKIidType(membership.PkiId)
 		endpoint := membership.Endpoint
-		internalEndpoint := protoext.InternalEndpoint(msg.SecretEnvelope)
+		internalEndpoint := utils.InternalEndpoint(msg.SecretEnvelope)
 		if utils.Contains(internalEndpoint, d.bootstrapPeers) || d.anchorPeerTracker.IsAnchorPeer(internalEndpoint) ||
 			utils.Contains(endpoint, d.bootstrapPeers) || d.anchorPeerTracker.IsAnchorPeer(endpoint) {
 			d.logger.Warnf("Do not remove bootstrap or anchor peer endpoint %s from membership.", endpoint)
 			return
 		}
-		d.logger.Infof("Remove member %s.", protoext.MemberToString(membership))
-		d.aliveMembership.Remove(id)
-		d.deadMembership.Remove(id)
-		delete(d.id2Member, id.String())
-		delete(d.deadLastTS, id.String())
-		delete(d.aliveLastTS, id.String())
+		d.logger.Infof("Remove member %s from membership.", utils.MemberToString(membership))
+		d.remove(id)
 	}
 
 	s := &aliveMsgStore{
@@ -450,7 +445,7 @@ func newAliveMsgStore(d *gossipDiscoveryImpl) *aliveMsgStore {
 }
 
 func (ams *aliveMsgStore) Add(msg any) bool {
-	m := msg.(*protoext.SignedGossipMessage)
+	m := msg.(*utils.SignedGossipMessage)
 	if m.GetAliveMsg() != nil {
 		return ams.MessageStore.Add(msg)
 	} else {
@@ -459,7 +454,7 @@ func (ams *aliveMsgStore) Add(msg any) bool {
 }
 
 func (ams *aliveMsgStore) CheckValid(msg any) bool {
-	m := msg.(*protoext.SignedGossipMessage)
+	m := msg.(*utils.SignedGossipMessage)
 	if m.GetAliveMsg() != nil {
 		return ams.MessageStore.CheckValid(msg)
 	} else {
@@ -504,8 +499,8 @@ func NewDiscoveryService(self NetworkMember, adapter DiscoveryAdapter, crypt Cry
 		aliveLastTS:                  make(map[string]*timestamp),
 		deadLastTS:                   make(map[string]*timestamp),
 		id2Member:                    make(map[string]*NetworkMember),
-		aliveMembership:              protoext.NewMembershipStore(),
-		deadMembership:               protoext.NewMembershipStore(),
+		aliveMembership:              utils.NewMembershipStore(),
+		deadMembership:               utils.NewMembershipStore(),
 		anchorPeerTracker:            anchorPeerTracker,
 		adapter:                      adapter,
 		crypt:                        crypt,
@@ -560,7 +555,7 @@ func (gdi *gossipDiscoveryImpl) Self() NetworkMember {
 		return NetworkMember{}
 	}
 	aliveMsg, _ := gdi.aliveMsgAndInternalEndpoint()
-	envelope, _ := protoext.NoopSign(aliveMsg)
+	envelope, _ := utils.NoopSign(aliveMsg)
 	clone := gdi.self.Clone()
 	clone.Envelope = envelope.Envelope
 	return clone
@@ -600,6 +595,7 @@ func (gdi *gossipDiscoveryImpl) GetMembership() Members {
 	return aliveMembers
 }
 
+// InitiateSync 主动给别人发送 MembershipRequest，然后根据别人反馈的 MembershipResponse 同步成员信息。
 func (gdi *gossipDiscoveryImpl) InitiateSync(peerNum int) {
 	if gdi.closed() {
 		gdi.logger.Warn("Discovery service is already closed.")
@@ -619,7 +615,7 @@ func (gdi *gossipDiscoveryImpl) InitiateSync(peerNum int) {
 		pulledPeer := aliveMembersAsSlice[i].GetAliveMsg().Membership
 		var internalEndpoint string
 		if aliveMembersAsSlice[i].Envelope.SecretEnvelope != nil {
-			internalEndpoint = protoext.InternalEndpoint(aliveMembersAsSlice[i].SecretEnvelope)
+			internalEndpoint = utils.InternalEndpoint(aliveMembersAsSlice[i].SecretEnvelope)
 		}
 		peers2Send = append(peers2Send, &NetworkMember{
 			Endpoint:         pulledPeer.Endpoint,
@@ -640,7 +636,7 @@ func (gdi *gossipDiscoveryImpl) InitiateSync(peerNum int) {
 		gdi.logger.Errorf("Failed creating membership request, error: %s.", err.Error())
 		return
 	}
-	signedReq, err := protoext.NoopSign(req)
+	signedReq, err := utils.NoopSign(req)
 	if err != nil {
 		gdi.logger.Errorf("Failed creating SignedGossipMessage, error: %s.", err.Error())
 		return
@@ -679,7 +675,7 @@ func (gdi *gossipDiscoveryImpl) Connect(member NetworkMember, identifier identif
 				continue
 			}
 			req.Nonce = utils.RandomUint64()
-			signedReq, err := protoext.NoopSign(req)
+			signedReq, err := utils.NoopSign(req)
 			if err != nil {
 				gdi.logger.Errorf("Failed creating SignedGossipMessage, error: %s.", err.Error())
 				continue
@@ -778,7 +774,8 @@ func (gdi *gossipDiscoveryImpl) handleEvents() {
 				gdi.expireDeadMembers([]utils.PKIidType{deadPeer})
 			}
 		case changedID := <-gdi.adapter.IdentitySwitch():
-			gdi.purge(changedID)
+			gdi.logger.Infof("Peer's PKI-ID is changed, so, remove %s from membership.", changedID.String())
+			gdi.remove(changedID)
 		case <-gdi.stopChan:
 			return
 		}
@@ -786,10 +783,9 @@ func (gdi *gossipDiscoveryImpl) handleEvents() {
 }
 
 func (gdi *gossipDiscoveryImpl) handleMessages() {
-	inCh := gdi.adapter.Accept()
 	for {
 		select {
-		case m := <-inCh:
+		case m := <-gdi.adapter.Accept():
 			gdi.handleMsgFromComm(m)
 		case <-gdi.stopChan:
 			return
@@ -797,7 +793,7 @@ func (gdi *gossipDiscoveryImpl) handleMessages() {
 	}
 }
 
-func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) {
+func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg utils.ReceivedMessage) {
 	if msg == nil {
 		return
 	}
@@ -809,7 +805,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 	}
 
 	if req := sgm.GetMemReq(); req != nil {
-		selfInfo, err := protoext.EnvelopeToSignedGossipMessage(req.SelfInformation)
+		selfInfo, err := utils.EnvelopeToSignedGossipMessage(req.SelfInformation)
 		if err != nil {
 			gdi.logger.Errorf("Failed deserializing GossipMessage from Envelope, error: %s.", err.Error())
 			return
@@ -825,7 +821,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 
 		var internalEndpoint string
 		if req.SelfInformation.SecretEnvelope != nil {
-			internalEndpoint = protoext.InternalEndpoint(req.SelfInformation.SecretEnvelope)
+			internalEndpoint = utils.InternalEndpoint(req.SelfInformation.SecretEnvelope)
 		}
 
 		go gdi.sendMembershipResponse(selfInfo.GetAliveMsg().Membership, internalEndpoint, sgm.Nonce)
@@ -834,7 +830,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 	if resp := sgm.GetMemRes(); resp != nil {
 		gdi.pubsub.Publish(fmt.Sprintf("%d", sgm.Nonce), sgm.Nonce)
 		for _, envelope := range resp.Alive {
-			alive, err := protoext.EnvelopeToSignedGossipMessage(envelope)
+			alive, err := utils.EnvelopeToSignedGossipMessage(envelope)
 			if err != nil {
 				gdi.logger.Errorf("Membership response contains an invalid message from an online peer, error: %s.", err.Error())
 				continue
@@ -849,7 +845,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 			}
 		}
 		for _, envelope := range resp.Dead {
-			dead, err := protoext.EnvelopeToSignedGossipMessage(envelope)
+			dead, err := utils.EnvelopeToSignedGossipMessage(envelope)
 			if err != nil {
 				gdi.logger.Errorf("Membership response contains an invalid message from an online peer, error: %s.", err.Error())
 				continue
@@ -859,7 +855,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 				continue
 			}
 
-			var unknownDeadMember []*protoext.SignedGossipMessage
+			var unknownDeadMember []*utils.SignedGossipMessage
 			gdi.mutex.RLock()
 			if _, known := gdi.id2Member[utils.PKIidType(dead.GetAliveMsg().Membership.PkiId).String()]; !known {
 				unknownDeadMember = append(unknownDeadMember, dead)
@@ -883,7 +879,7 @@ func (gdi *gossipDiscoveryImpl) handleMsgFromComm(msg protoext.ReceivedMessage) 
 	}
 }
 
-func (gdi *gossipDiscoveryImpl) handleAliveMsg(m *protoext.SignedGossipMessage) {
+func (gdi *gossipDiscoveryImpl) handleAliveMsg(m *utils.SignedGossipMessage) {
 	if gdi.isSentByMe(m) {
 		return
 	}
@@ -896,7 +892,7 @@ func (gdi *gossipDiscoveryImpl) handleAliveMsg(m *protoext.SignedGossipMessage) 
 	gdi.mutex.RUnlock()
 
 	if !known {
-		gdi.learnNewMembers([]*protoext.SignedGossipMessage{m}, []*protoext.SignedGossipMessage{})
+		gdi.learnNewMembers([]*utils.SignedGossipMessage{m}, []*utils.SignedGossipMessage{})
 		return
 	}
 
@@ -906,12 +902,12 @@ func (gdi *gossipDiscoveryImpl) handleAliveMsg(m *protoext.SignedGossipMessage) 
 	gdi.mutex.RUnlock()
 
 	if !isAlive && !isDead {
-		gdi.logger.Panicf("Member %s is known but not found neither in alive nor in dead lastTS maps.", protoext.MemberToString(m.GetAliveMsg().Membership))
+		gdi.logger.Panicf("Member %s is known but not found neither in alive nor in dead lastTS maps.", utils.MemberToString(m.GetAliveMsg().Membership))
 		return
 	}
 
 	if isAlive && isDead {
-		gdi.logger.Panicf("Member %s is known but found in alive and dead lastTS maps at the same time.", protoext.MemberToString(m.GetAliveMsg().Membership))
+		gdi.logger.Panicf("Member %s is known but found in alive and dead lastTS maps at the same time.", utils.MemberToString(m.GetAliveMsg().Membership))
 		return
 	}
 
@@ -919,15 +915,15 @@ func (gdi *gossipDiscoveryImpl) handleAliveMsg(m *protoext.SignedGossipMessage) 
 		if before(lastDeadTS, ts) {
 			gdi.resurrectMember(m, ts)
 		} else if !same(lastDeadTS, ts) {
-			gdi.logger.Debugf("Got old alive message about dead peer, last dead time: %s, but the timestamp of alive message is %s.", lastDeadTS.String(), protoext.PeerTimeToString(ts))
+			gdi.logger.Debugf("Got old alive message about dead peer, last dead time: %s, but the timestamp of alive message is %s.", lastDeadTS.String(), utils.PeerTimeToString(ts))
 		}
 	}
 
 	if isAlive {
 		if before(lastAliveTS, ts) {
-			gdi.learnExistingMembers([]*protoext.SignedGossipMessage{m})
+			gdi.learnExistingMembers([]*utils.SignedGossipMessage{m})
 		} else if !same(lastAliveTS, ts) {
-			gdi.logger.Debugf("Got old alive message about alive peer, last alive time: %s, but the timestamp of alive message is %s.", lastDeadTS.String(), protoext.PeerTimeToString(ts))
+			gdi.logger.Debugf("Got old alive message about alive peer, last alive time: %s, but the timestamp of alive message is %s.", lastAliveTS.String(), utils.PeerTimeToString(ts))
 		}
 	}
 }
@@ -940,7 +936,7 @@ func (gdi *gossipDiscoveryImpl) sendMembershipResponse(targetMember *pgossip.Mem
 		PKIid:            targetMember.PkiId,
 	}
 
-	var aliveMsg *protoext.SignedGossipMessage
+	var aliveMsg *utils.SignedGossipMessage
 	var err error
 	gdi.mutex.RLock()
 	aliveMsg = gdi.selfAliveMsg
@@ -958,7 +954,7 @@ func (gdi *gossipDiscoveryImpl) sendMembershipResponse(targetMember *pgossip.Mem
 		return
 	}
 
-	msg, err := protoext.NoopSign(&pgossip.GossipMessage{
+	msg, err := utils.NoopSign(&pgossip.GossipMessage{
 		Tag:   pgossip.GossipMessage_EMPTY,
 		Nonce: nonce,
 		Content: &pgossip.GossipMessage_MemRes{
@@ -979,7 +975,7 @@ func (gdi *gossipDiscoveryImpl) sendMembershipRequestWithoutAck(member *NetworkM
 		gdi.logger.Errorf("Failed creating membership request, error: %s.", err.Error())
 		return
 	}
-	signedReq, err := protoext.NoopSign(req)
+	signedReq, err := utils.NoopSign(req)
 	if err != nil {
 		gdi.logger.Errorf("Failed creating SignedGossipMessage, error: %s.", err.Error())
 		return
@@ -987,7 +983,7 @@ func (gdi *gossipDiscoveryImpl) sendMembershipRequestWithoutAck(member *NetworkM
 	gdi.adapter.SendToPeer(member, signedReq)
 }
 
-func (gdi *gossipDiscoveryImpl) sendUntilAcked(peer *NetworkMember, msg *protoext.SignedGossipMessage) {
+func (gdi *gossipDiscoveryImpl) sendUntilAcked(peer *NetworkMember, msg *utils.SignedGossipMessage) {
 	nonce := msg.Nonce
 	for i := 0; i < gdi.maxConnectAttempts && !gdi.closed(); i++ {
 		subscription := gdi.pubsub.Subscribe(fmt.Sprintf("%d", nonce), time.Second*5)
@@ -995,13 +991,13 @@ func (gdi *gossipDiscoveryImpl) sendUntilAcked(peer *NetworkMember, msg *protoex
 		if _, timeoutErr := subscription.Listen(); timeoutErr == nil {
 			return
 		} else {
-			gdi.logger.Error("timeout expired")
+			gdi.logger.Error("Timeout expired.")
 		}
 		time.Sleep(gdi.reconnectInterval)
 	}
 }
 
-func (gdi *gossipDiscoveryImpl) learnNewMembers(aliveMembers []*protoext.SignedGossipMessage, deadMembers []*protoext.SignedGossipMessage) {
+func (gdi *gossipDiscoveryImpl) learnNewMembers(aliveMembers []*utils.SignedGossipMessage, deadMembers []*utils.SignedGossipMessage) {
 	gdi.mutex.Lock()
 	defer gdi.mutex.Unlock()
 
@@ -1015,8 +1011,8 @@ func (gdi *gossipDiscoveryImpl) learnNewMembers(aliveMembers []*protoext.SignedG
 			lastSeen: time.Now(),
 			seqNum:   am.GetAliveMsg().Timestamp.SeqNum,
 		}
-		gdi.aliveMembership.Put(pkiID, &protoext.SignedGossipMessage{GossipMessage: am.GossipMessage, Envelope: am.Envelope})
-		gdi.logger.Debugf("Learned about a new alive member: %s.", protoext.AliveMessageToString(am.GetAliveMsg()))
+		gdi.aliveMembership.Put(pkiID, &utils.SignedGossipMessage{GossipMessage: am.GossipMessage, Envelope: am.Envelope})
+		gdi.logger.Debugf("Learned about a new alive member: %s.", utils.AliveMessageToString(am.GetAliveMsg()))
 	}
 
 	for _, dm := range deadMembers {
@@ -1030,19 +1026,19 @@ func (gdi *gossipDiscoveryImpl) learnNewMembers(aliveMembers []*protoext.SignedG
 			seqNum:   dm.GetAliveMsg().Timestamp.SeqNum,
 			lastSeen: time.Now(),
 		}
-		gdi.deadMembership.Put(pkiID, &protoext.SignedGossipMessage{GossipMessage: dm.GossipMessage, Envelope: dm.Envelope})
-		gdi.logger.Debugf("Learned about a new dead member: %s.", protoext.AliveMessageToString(dm.GetAliveMsg()))
+		gdi.deadMembership.Put(pkiID, &utils.SignedGossipMessage{GossipMessage: dm.GossipMessage, Envelope: dm.Envelope})
+		gdi.logger.Debugf("Learned about a new dead member: %s.", utils.AliveMessageToString(dm.GetAliveMsg()))
 	}
 
 	// 更新所有新成员信息，无论是活的还是死的。
-	for _, members := range [][]*protoext.SignedGossipMessage{aliveMembers, deadMembers} {
+	for _, members := range [][]*utils.SignedGossipMessage{aliveMembers, deadMembers} {
 		for _, m := range members {
 			aMsg := m.GetAliveMsg()
 			pkiID := utils.PKIidType(aMsg.Membership.PkiId)
 
 			var internalEndpoint string
 			if m.Envelope.SecretEnvelope != nil {
-				internalEndpoint = protoext.InternalEndpoint(m.SecretEnvelope)
+				internalEndpoint = utils.InternalEndpoint(m.SecretEnvelope)
 			}
 			if prevNetMem := gdi.id2Member[pkiID.String()]; prevNetMem != nil {
 				internalEndpoint = prevNetMem.InternalEndpoint
@@ -1058,7 +1054,7 @@ func (gdi *gossipDiscoveryImpl) learnNewMembers(aliveMembers []*protoext.SignedG
 	}
 }
 
-func (gdi *gossipDiscoveryImpl) learnExistingMembers(aliveArr []*protoext.SignedGossipMessage) {
+func (gdi *gossipDiscoveryImpl) learnExistingMembers(aliveArr []*utils.SignedGossipMessage) {
 	gdi.mutex.Lock()
 	defer gdi.mutex.Unlock()
 
@@ -1075,7 +1071,7 @@ func (gdi *gossipDiscoveryImpl) learnExistingMembers(aliveArr []*protoext.Signed
 			internalEndpoint = prevNetMem.InternalEndpoint
 		}
 		if m.Envelope.SecretEnvelope != nil {
-			internalEndpoint = protoext.InternalEndpoint(m.SecretEnvelope)
+			internalEndpoint = utils.InternalEndpoint(m.SecretEnvelope)
 		}
 
 		gdi.id2Member[pkiID.String()] = &NetworkMember{
@@ -1086,12 +1082,12 @@ func (gdi *gossipDiscoveryImpl) learnExistingMembers(aliveArr []*protoext.Signed
 		}
 
 		if _, isKnownAsDead := gdi.deadLastTS[pkiID.String()]; isKnownAsDead {
-			gdi.logger.Warnf("The member %s has been dead.", protoext.MemberToString(am.Membership))
+			gdi.logger.Warnf("The member %s has been dead.", utils.MemberToString(am.Membership))
 			continue
 		}
 
 		if oldTS, isKnownAsAlive := gdi.aliveLastTS[pkiID.String()]; !isKnownAsAlive {
-			gdi.logger.Warnf("The member %s is not alive.", protoext.MemberToString(am.Membership))
+			gdi.logger.Warnf("The member %s is not alive.", utils.MemberToString(am.Membership))
 			continue
 		} else {
 			var changed bool = false
@@ -1105,20 +1101,20 @@ func (gdi *gossipDiscoveryImpl) learnExistingMembers(aliveArr []*protoext.Signed
 				oldTS.seqNum = am.Timestamp.SeqNum
 			}
 			if changed {
-				gdi.logger.Debugf("Update alive member: %s.", protoext.AliveMessageToString(am))
+				gdi.logger.Debugf("Update alive member: %s.", utils.AliveMessageToString(am))
 			}
 			gdi.aliveLastTS[pkiID.String()].lastSeen = time.Now()
 
 			if old := gdi.aliveMembership.MsgByID(pkiID); old != nil {
-				gdi.logger.Debugf("Replace old alive membership %s by new alive membership %s.", protoext.AliveMessageToString(old.GetAliveMsg()), protoext.AliveMessageToString(am))
+				gdi.logger.Debugf("Replace old alive membership %s by new alive membership %s.", utils.AliveMessageToString(old.GetAliveMsg()), utils.AliveMessageToString(am))
 				gdi.aliveMembership.Remove(pkiID)
-				gdi.aliveMembership.Put(pkiID, &protoext.SignedGossipMessage{GossipMessage: m.GossipMessage, Envelope: m.Envelope})
+				gdi.aliveMembership.Put(pkiID, &utils.SignedGossipMessage{GossipMessage: m.GossipMessage, Envelope: m.Envelope})
 			}
 		}
 	}
 }
 
-func (gdi *gossipDiscoveryImpl) resurrectMember(sgm *protoext.SignedGossipMessage, pt *pgossip.PeerTime) {
+func (gdi *gossipDiscoveryImpl) resurrectMember(sgm *utils.SignedGossipMessage, pt *pgossip.PeerTime) {
 	gdi.mutex.Lock()
 	defer gdi.mutex.Unlock()
 
@@ -1135,7 +1131,7 @@ func (gdi *gossipDiscoveryImpl) resurrectMember(sgm *protoext.SignedGossipMessag
 		internalEndpoint = prevNetMem.InternalEndpoint
 	}
 	if sgm.SecretEnvelope != nil {
-		internalEndpoint = protoext.InternalEndpoint(sgm.SecretEnvelope)
+		internalEndpoint = utils.InternalEndpoint(sgm.SecretEnvelope)
 	}
 
 	gdi.id2Member[pkiID.String()] = &NetworkMember{
@@ -1147,7 +1143,7 @@ func (gdi *gossipDiscoveryImpl) resurrectMember(sgm *protoext.SignedGossipMessag
 
 	delete(gdi.deadLastTS, pkiID.String())
 	gdi.deadMembership.Remove(pkiID)
-	gdi.aliveMembership.Put(pkiID, &protoext.SignedGossipMessage{GossipMessage: sgm.GossipMessage, Envelope: sgm.Envelope})
+	gdi.aliveMembership.Put(pkiID, &utils.SignedGossipMessage{GossipMessage: sgm.GossipMessage, Envelope: sgm.Envelope})
 }
 
 func (gdi *gossipDiscoveryImpl) getDeadMembers() []utils.PKIidType {
@@ -1166,7 +1162,7 @@ func (gdi *gossipDiscoveryImpl) getDeadMembers() []utils.PKIidType {
 	return dead
 }
 
-func (gdi *gossipDiscoveryImpl) isSentByMe(m *protoext.SignedGossipMessage) bool {
+func (gdi *gossipDiscoveryImpl) isSentByMe(m *utils.SignedGossipMessage) bool {
 	pkiID := m.GetAliveMsg().Membership.PkiId
 	if !bytes.Equal(gdi.self.PKIid, pkiID) {
 		return false
@@ -1174,25 +1170,25 @@ func (gdi *gossipDiscoveryImpl) isSentByMe(m *protoext.SignedGossipMessage) bool
 	diffExternalEndpoint := gdi.self.Endpoint != m.GetAliveMsg().Membership.Endpoint
 	var diffInternalEndpoint bool
 	if m.GetSecretEnvelope() != nil {
-		internalEndpoint := protoext.InternalEndpoint(m.GetSecretEnvelope())
+		internalEndpoint := utils.InternalEndpoint(m.GetSecretEnvelope())
 		if internalEndpoint != "" {
 			diffInternalEndpoint = gdi.self.InternalEndpoint != internalEndpoint
 		}
 	}
 
 	if diffExternalEndpoint || diffInternalEndpoint {
-		gdi.logger.Errorf("Bad configuration detected, received AliveMessage from a peer with the same PKI-ID as myself: %s.", protoext.AliveMessageToString(m.GetAliveMsg()))
+		gdi.logger.Errorf("Bad configuration detected, received AliveMessage from a peer with the same PKI-ID as myself: %s.", utils.AliveMessageToString(m.GetAliveMsg()))
 	}
 	return true
 }
 
-func (gdi *gossipDiscoveryImpl) createSignedAliveMessage(includeInternalEndpoint bool) (*protoext.SignedGossipMessage, error) {
+func (gdi *gossipDiscoveryImpl) createSignedAliveMessage(includeInternalEndpoint bool) (*utils.SignedGossipMessage, error) {
 	msg, internalEndpoint := gdi.aliveMsgAndInternalEndpoint()
 	envelope := gdi.crypt.SignMessage(msg, internalEndpoint)
 	if envelope == nil {
 		return nil, errors.NewError("failed signing message")
 	}
-	sgm := &protoext.SignedGossipMessage{
+	sgm := &utils.SignedGossipMessage{
 		GossipMessage: msg,
 		Envelope:      envelope,
 	}
@@ -1203,7 +1199,7 @@ func (gdi *gossipDiscoveryImpl) createSignedAliveMessage(includeInternalEndpoint
 	return sgm, nil
 }
 
-func (gdi *gossipDiscoveryImpl) createMembershipResponse(aliveMsg *protoext.SignedGossipMessage, targetMember *NetworkMember) *pgossip.MembershipResponse {
+func (gdi *gossipDiscoveryImpl) createMembershipResponse(aliveMsg *utils.SignedGossipMessage, targetMember *NetworkMember) *pgossip.MembershipResponse {
 	shouldSend, omitConcealedFields := gdi.disclosurePolicy(targetMember)
 
 	if !shouldSend(aliveMsg) {
@@ -1323,8 +1319,7 @@ func (gdi *gossipDiscoveryImpl) isMyOwnEndpoint(endpoint string) bool {
 	return endpoint == fmt.Sprintf("127.0.0.1:%d", gdi.port) || endpoint == fmt.Sprintf("localhost:%d", gdi.port) || endpoint == gdi.self.Endpoint || endpoint == gdi.self.InternalEndpoint
 }
 
-func (gdi *gossipDiscoveryImpl) purge(pkiID utils.PKIidType) {
-	gdi.logger.Infof("Purging %s from membership.", pkiID.String())
+func (gdi *gossipDiscoveryImpl) remove(pkiID utils.PKIidType) {
 	gdi.mutex.Lock()
 	defer gdi.mutex.Unlock()
 	gdi.aliveMembership.Remove(pkiID)
@@ -1351,6 +1346,7 @@ func same(a *timestamp, b *pgossip.PeerTime) bool {
 	return uint64(a.incTime.UnixNano()) == b.IncNum && a.seqNum == b.SeqNum
 }
 
+// before 判断时间戳 a 是否在时间戳 b 之前。
 func before(a *timestamp, b *pgossip.PeerTime) bool {
 	return (uint64(a.incTime.UnixNano()) == b.IncNum && a.seqNum < b.SeqNum) || (uint64(a.incTime.UnixNano()) < b.IncNum)
 }

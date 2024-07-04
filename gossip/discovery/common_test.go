@@ -5,8 +5,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/11090815/mayy/common/mlog"
+	"github.com/11090815/mayy/gossip/utils"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/context"
 )
 
 type Once struct {
@@ -62,4 +66,56 @@ func TestLock(t *testing.T) {
 	mutex.RUnlock()
 	mutex.RUnlock()
 	t.Log("finish")
+}
+
+func TestChannel(t *testing.T) {
+	ch := make(chan int, 1000)
+	go func() {
+		for i := 1; i <= 54; i++ {
+			ch <- i
+		}
+	}()
+	time.Sleep(time.Second)
+	close(ch)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 10)
+	defer cancel()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func(cha <-chan int) {
+		c := cha
+		for {
+			select {
+			case m := <- c:
+				time.Sleep(time.Millisecond * 10)
+				t.Log("m:", m)
+			case <-ctx.Done():
+				wg.Done()
+				return
+			}
+		}
+	}(ch)
+	wg.Wait()
+}
+
+func TestConcurrency(t *testing.T) {
+	logger := utils.GetLogger(utils.DiscoveryLogger, "p1", mlog.DebugLevel, true, true)
+	
+	type consenter struct {
+		logger mlog.Logger
+		cost time.Duration
+	}
+
+	c := &consenter{
+		logger: logger,
+		cost: time.Millisecond * 30,
+	}
+
+	doSomething := func(c *consenter) {
+		for i := 1; i < 10; i++ {
+			c.logger.Debugf("计数：%d.", i+1)
+			time.Sleep(c.cost)
+		}
+	}
+
+	go doSomething(c)
 }

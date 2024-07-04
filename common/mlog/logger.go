@@ -21,6 +21,7 @@ type Logger interface {
 	Panicf(format string, args ...interface{})
 	With(key, value string) Logger
 	Stop() error
+	ChangeLevel(lvl Level)
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -219,6 +220,12 @@ func (l *logger) Stop() error {
 	loggerBus.mutex.Unlock()
 	loggerBus.terminal.close()
 	return loggerBus.file.close()
+}
+
+func (l *logger) ChangeLevel(lvl Level) {
+	l.mutex.Lock()
+	l.lvl = lvl
+	l.mutex.Unlock()
 }
 
 func (l *logger) stopped() bool {

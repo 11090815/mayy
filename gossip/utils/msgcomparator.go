@@ -1,19 +1,18 @@
-package protoext
+package utils
 
 import (
 	"bytes"
 
-	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 )
 
-func NewGossipMessageComparator(blockStorageSize int) utils.MessageReplacingPolicy {
-	return func(this, that any) utils.InfluenceResult {
+func NewGossipMessageComparator(blockStorageSize int) MessageReplacingPolicy {
+	return func(this, that any) InfluenceResult {
 		return invalidationPolicy(this, that, blockStorageSize)
 	}
 }
 
-func invalidationPolicy(this, that any, blockStorageSize int) utils.InfluenceResult {
+func invalidationPolicy(this, that any, blockStorageSize int) InfluenceResult {
 	thisMsg := this.(*SignedGossipMessage)
 	thatMsg := that.(*SignedGossipMessage)
 
@@ -37,66 +36,66 @@ func invalidationPolicy(this, that any, blockStorageSize int) utils.InfluenceRes
 		return leaderInvalidationPolicy(thisMsg.GetLeadershipMsg(), thatMsg.GetLeadershipMsg())
 	}
 
-	return utils.MessageNoAction
+	return MessageNoAction
 }
 
-func stateInvalidationPolicy(thisMsg *pgossip.StateInfo, thatMsg *pgossip.StateInfo) utils.InfluenceResult {
+func stateInvalidationPolicy(thisMsg *pgossip.StateInfo, thatMsg *pgossip.StateInfo) InfluenceResult {
 	if !bytes.Equal(thisMsg.PkiId, thatMsg.PkiId) {
-		return utils.MessageNoAction
+		return MessageNoAction
 	}
 	return compareTimestamps(thisMsg.Timestamp, thatMsg.Timestamp)
 }
 
-func identityInvalidationPolicy(thisMsg *pgossip.PeerIdentity, thatMsg *pgossip.PeerIdentity) utils.InfluenceResult {
+func identityInvalidationPolicy(thisMsg *pgossip.PeerIdentity, thatMsg *pgossip.PeerIdentity) InfluenceResult {
 	if bytes.Equal(thisMsg.PkiId, thatMsg.PkiId) {
-		return utils.MessageInvalidated
+		return MessageInvalidated
 	}
-	return utils.MessageNoAction
+	return MessageNoAction
 }
 
-func dataInvalidationPolicy(thisMsg *pgossip.DataMessage, thatMsg *pgossip.DataMessage, blockStorageSize int) utils.InfluenceResult {
+func dataInvalidationPolicy(thisMsg *pgossip.DataMessage, thatMsg *pgossip.DataMessage, blockStorageSize int) InfluenceResult {
 	if thisMsg.Payload.SeqNum == thatMsg.Payload.SeqNum {
-		return utils.MessageInvalidated
+		return MessageInvalidated
 	}
 
 	diff := abs(thisMsg.Payload.SeqNum, thatMsg.Payload.SeqNum)
 	if diff <= uint64(blockStorageSize) {
-		return utils.MessageNoAction
+		return MessageNoAction
 	}
 
 	if thisMsg.Payload.SeqNum > thatMsg.Payload.SeqNum {
-		return utils.MessageInvalidates
+		return MessageInvalidates
 	}
 
-	return utils.MessageInvalidated
+	return MessageInvalidated
 }
 
-func aliveInvalidationPolicy(thisMsg *pgossip.AliveMessage, thatMsg *pgossip.AliveMessage) utils.InfluenceResult {
+func aliveInvalidationPolicy(thisMsg *pgossip.AliveMessage, thatMsg *pgossip.AliveMessage) InfluenceResult {
 	if !bytes.Equal(thisMsg.Membership.PkiId, thatMsg.Membership.PkiId) {
-		return utils.MessageNoAction
+		return MessageNoAction
 	}
 	return compareTimestamps(thisMsg.Timestamp, thatMsg.Timestamp)
 }
 
-func leaderInvalidationPolicy(thisMsg *pgossip.LeadershipMessage, thatMsg *pgossip.LeadershipMessage) utils.InfluenceResult {
+func leaderInvalidationPolicy(thisMsg *pgossip.LeadershipMessage, thatMsg *pgossip.LeadershipMessage) InfluenceResult {
 	if !bytes.Equal(thisMsg.PkiId, thatMsg.PkiId) {
-		return utils.MessageNoAction
+		return MessageNoAction
 	}
 	return compareTimestamps(thisMsg.Timestamp, thatMsg.Timestamp)
 }
 
 // compareTimestamps 基于时间戳的比较：总的原则是 IncNum 大的消息有效，有相同 IncNum 的消息，SeqNum 大的有效。
-func compareTimestamps(thisTS *pgossip.PeerTime, thatTS *pgossip.PeerTime) utils.InfluenceResult {
+func compareTimestamps(thisTS *pgossip.PeerTime, thatTS *pgossip.PeerTime) InfluenceResult {
 	if thisTS.IncNum == thatTS.IncNum {
 		if thisTS.SeqNum > thatTS.SeqNum {
-			return utils.MessageInvalidates
+			return MessageInvalidates
 		}
-		return utils.MessageInvalidated
+		return MessageInvalidated
 	}
 	if thisTS.IncNum < thatTS.IncNum {
-		return utils.MessageInvalidated
+		return MessageInvalidated
 	}
-	return utils.MessageInvalidates
+	return MessageInvalidates
 }
 
 // abs 计算 |a-b|

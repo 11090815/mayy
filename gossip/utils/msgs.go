@@ -1,9 +1,8 @@
-package protoext
+package utils
 
 import (
 	"fmt"
 
-	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 )
 
@@ -27,9 +26,9 @@ type ReceivedMessage interface {
 /* ------------------------------------------------------------------------------------------ */
 
 type ConnectionInfo struct {
-	ID       utils.PKIidType
+	ID       PKIidType
 	Auth     *AuthInfo
-	Identity utils.PeerIdentityType
+	Identity PeerIdentityType
 	Endpoint string
 }
 
@@ -42,4 +41,11 @@ func (info *ConnectionInfo) String() string {
 type AuthInfo struct {
 	SignedData []byte
 	Signature  []byte
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type EmittedGossipMessage struct {
+	*SignedGossipMessage
+	filter func(id PKIidType) bool
 }
