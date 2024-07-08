@@ -1,6 +1,7 @@
 package election
 
 import (
+	"bytes"
 	"sync"
 
 	"github.com/11090815/mayy/common/mlog"
@@ -46,6 +47,19 @@ type gossip interface {
 
 /* ------------------------------------------------------------------------------------------ */
 
+type leaderElectionAdapter interface {
+	Gossip(*leaderElecMsg)
+
+	Accept() <-chan *leaderElecMsg
+
+	CreateMessage(isDeclaration bool) *leaderElecMsg
+
+	// Peers 返回与自己在同一通道且在同一组织内的所有 peer 节点信息。
+	Peers() []*utils.NetworkMember
+
+	ReportMetrics(isLeader bool)
+}
+
 type adapter struct {
 	gossip   gossip
 	pkiID    utils.PKIidType
@@ -56,4 +70,84 @@ type adapter struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	metrics  *metrics.ElectionMetrics
+}
+
+func (a *adapter) Gossip(msg *leaderElecMsg) {
+	gossipMessage := &pgossip.GossipMessage{
+		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+		Nonce:   0,
+		Channel: a.channel,
+		Content: &pgossip.GossipMessage_LeadershipMsg{
+			LeadershipMsg: msg.LeadershipMessage,
+		},
+	}
+	a.gossip.Gossip(gossipMessage)
+}
+
+func (a *adapter) Accept() <-chan *leaderElecMsg {
+	var acceptor utils.MessageAcceptor = func(msg any) bool {
+		return msg.(*pgossip.GossipMessage).Tag == pgossip.GossipMessage_CHAN_AND_ORG &&
+			msg.(*pgossip.GossipMessage).GetLeadershipMsg() != nil &&
+			bytes.Equal(msg.(*pgossip.GossipMessage).Channel, a.channel)
+	}
+
+	inCh, _ := a.gossip.Accept(acceptor, false)
+
+	msgCh := make(chan *leaderElecMsg)
+	go func(inCh <-chan *pgossip.GossipMessage, msgCh chan *leaderElecMsg, stopCh chan struct{}) {
+		for {
+			select {
+			case <-stopCh:
+				return
+			case m, ok := <-inCh:
+				if ok {
+					msgCh <- &leaderElecMsg{LeadershipMessage: m.GetLeadershipMsg()}
+				}
+			}
+		}
+	}(inCh, msgCh, a.stopCh)
+
+	return msgCh
+}
+
+func (a *adapter) CreateMessage(isDeclaration bool) *leaderElecMsg {
+	a.seqNum++
+	seqNum := a.seqNum
+	leadershipMsg := &pgossip.LeadershipMessage{
+		PkiId:         a.pkiID,
+		IsDeclaration: isDeclaration,
+		Timestamp: &pgossip.PeerTime{
+			IncNum: a.incTime,
+			SeqNum: seqNum,
+		},
+	}
+
+	return &leaderElecMsg{LeadershipMessage: leadershipMsg}
+}
+
+// Peers 返回与自己在同一通道且在同一组织内的所有 peer 节点信息。
+func (a *adapter) Peers() []*utils.NetworkMember {
+	peers := a.gossip.PeersOfChannel(a.channel)
+
+	var res []*utils.NetworkMember
+	for _, peer := range peers {
+		if a.gossip.IsInMyOrg(peer) {
+			res = append(res, &peer)
+		}
+	}
+	return res
+}
+
+func (a *adapter) ReportMetrics(isLeader bool) {
+	var leadership float64 = 0.0
+	if isLeader {
+		leadership = 1.0
+	}
+	a.metrics.Declaration.With("channel", a.channel.String()).Set(leadership)
+}
+
+func (a *adapter) Stop() {
+	a.stopOnce.Do(func() {
+		close(a.stopCh)
+	})
 }

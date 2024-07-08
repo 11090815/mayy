@@ -9,6 +9,7 @@ import (
 const (
 	CommLogger      = "gossip.comm"
 	DiscoveryLogger = "gossip.discovery"
+	ElectionLogger  = "gossip.election"
 )
 
 var (

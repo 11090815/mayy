@@ -85,9 +85,12 @@ func TestChannel(t *testing.T) {
 		c := cha
 		for {
 			select {
-			case m := <- c:
+			case m, ok := <- c:
 				time.Sleep(time.Millisecond * 10)
-				t.Log("m:", m)
+				if ok {
+					t.Log("m:", m)
+				}
+				// t.Log("m:", m)
 			case <-ctx.Done():
 				wg.Done()
 				return
