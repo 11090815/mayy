@@ -44,9 +44,9 @@ type Obj struct {
 	mu *sync.Mutex
 }
 
-func (o Obj) Lock() {o.mu.Lock()}
-func (o Obj) Unlock() {o.mu.Unlock()}
-func (o Obj) Do() {fmt.Println("do something")}
+func (o Obj) Lock()   { o.mu.Lock() }
+func (o Obj) Unlock() { o.mu.Unlock() }
+func (o Obj) Do()     { fmt.Println("do something") }
 
 func TestCopyLock(t *testing.T) {
 	o := Obj{mu: &sync.Mutex{}}
@@ -77,7 +77,7 @@ func TestChannel(t *testing.T) {
 	}()
 	time.Sleep(time.Second)
 	close(ch)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -85,7 +85,7 @@ func TestChannel(t *testing.T) {
 		c := cha
 		for {
 			select {
-			case m, ok := <- c:
+			case m, ok := <-c:
 				time.Sleep(time.Millisecond * 10)
 				if ok {
 					t.Log("m:", m)
@@ -102,15 +102,15 @@ func TestChannel(t *testing.T) {
 
 func TestConcurrency(t *testing.T) {
 	logger := utils.GetLogger(utils.DiscoveryLogger, "p1", mlog.DebugLevel, true, true)
-	
+
 	type consenter struct {
 		logger mlog.Logger
-		cost time.Duration
+		cost   time.Duration
 	}
 
 	c := &consenter{
 		logger: logger,
-		cost: time.Millisecond * 30,
+		cost:   time.Millisecond * 30,
 	}
 
 	doSomething := func(c *consenter) {
@@ -121,4 +121,14 @@ func TestConcurrency(t *testing.T) {
 	}
 
 	go doSomething(c)
+}
+
+func TestCloseChannel(t *testing.T) {
+	ch := make(chan struct{})
+	close(ch)
+
+	for i := 0; i < 10; i++ {
+		<-ch
+		t.Log("hello", i)
+	}
 }

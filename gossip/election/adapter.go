@@ -1,8 +1,15 @@
+/*
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
 package election
 
 import (
 	"bytes"
 	"sync"
+	"time"
 
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/metrics"
@@ -10,144 +17,150 @@ import (
 	"github.com/11090815/mayy/protobuf/pgossip"
 )
 
-type leaderElecMsg struct {
-	*pgossip.LeadershipMessage
-}
-
-func (lem *leaderElecMsg) SenderID() utils.PKIidType {
-	return utils.PKIidType(lem.PkiId)
-}
-
-func (lem *leaderElecMsg) IsDeclaration() bool {
-	return lem.LeadershipMessage.IsDeclaration
-}
-
-func (lem *leaderElecMsg) IsProposal() bool {
-	return !lem.IsDeclaration()
-}
-
-/* ------------------------------------------------------------------------------------------ */
-
-// gossip Node 结构体会实现此接口。
 type gossip interface {
-	// PeersOfChannel 返回指定通道中所有活跃的 peer 节点。
+	// PeersOfChannel returns the NetworkMembers considered alive in a channel
 	PeersOfChannel(channel utils.ChannelID) []utils.NetworkMember
 
-	// Accept为匹配某个谓词的其他节点发送的消息返回专用只读通道。
-	// 如果passThrough为假，则消息事先由八卦层处理。
-	// 如果passThrough为真，则八卦层不会介入，消息可用于向发送者发送回复。
+	// Accept returns a dedicated read-only channel for messages sent by other nodes that match a certain predicate.
+	// If passThrough is false, the messages are processed by the gossip layer beforehand.
+	// If passThrough is true, the gossip layer doesn't intervene and the messages
+	// can be used to send a reply back to the sender
 	Accept(acceptor utils.MessageAcceptor, passThrough bool) (<-chan *pgossip.GossipMessage, <-chan utils.ReceivedMessage)
 
-	// Gossip 将给定的消息广播给网络中的其他节点。
+	// Gossip sends a message to other peers to the network
 	Gossip(msg *pgossip.GossipMessage)
 
-	// IsInMyOrg 判断给定的网络节点是否与自己同属于一个组织。
+	// IsInMyOrg checks whether a network member is in this peer's org
 	IsInMyOrg(member utils.NetworkMember) bool
 }
 
-/* ------------------------------------------------------------------------------------------ */
+// LeaderElectionAdapter 在 leader 选举模块中被用来接收/发送消息。
+type LeaderElectionAdapter interface {
+	// Gossip gossips a message to other peers
+	Gossip(*pgossip.GossipMessage)
 
-type leaderElectionAdapter interface {
-	Gossip(*leaderElecMsg)
+	// Accept returns a channel that emits messages
+	Accept() <-chan *pgossip.GossipMessage
 
-	Accept() <-chan *leaderElecMsg
+	// CreateProposalMessage
+	CreateMessage(isDeclaration bool) *pgossip.GossipMessage
 
-	CreateMessage(isDeclaration bool) *leaderElecMsg
+	// Peers returns a list of peers considered alive
+	Peers() []utils.NetworkMember
 
-	// Peers 返回与自己在同一通道且在同一组织内的所有 peer 节点信息。
-	Peers() []*utils.NetworkMember
-
+	// ReportMetrics sends a report to the metrics server about a leadership status
 	ReportMetrics(isLeader bool)
 }
 
-type adapter struct {
-	gossip   gossip
-	pkiID    utils.PKIidType
-	incTime  uint64
-	seqNum   uint64
-	channel  utils.ChannelID
-	logger   mlog.Logger
-	stopCh   chan struct{}
-	stopOnce sync.Once
+type adapterImpl struct {
+	gossip    gossip
+	selfPKIid utils.PKIidType
+
+	incTime uint64
+	seqNum  uint64
+
+	channel utils.ChannelID
+
+	logger mlog.Logger
+
+	doneCh   chan struct{}
+	stopOnce *sync.Once
 	metrics  *metrics.ElectionMetrics
 }
 
-func (a *adapter) Gossip(msg *leaderElecMsg) {
-	gossipMessage := &pgossip.GossipMessage{
-		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
-		Nonce:   0,
-		Channel: a.channel,
-		Content: &pgossip.GossipMessage_LeadershipMsg{
-			LeadershipMsg: msg.LeadershipMessage,
-		},
+// NewAdapter creates new leader election adapter
+func NewAdapter(gossip gossip, pkiid utils.PKIidType, channel utils.ChannelID,
+	metrics *metrics.ElectionMetrics, logger mlog.Logger) LeaderElectionAdapter {
+	return &adapterImpl{
+		gossip:    gossip,
+		selfPKIid: pkiid,
+		incTime:   uint64(time.Now().UnixNano()),
+		seqNum:    uint64(0),
+		channel:   channel,
+		logger:    logger,
+		doneCh:    make(chan struct{}),
+		stopOnce:  &sync.Once{},
+		metrics:   metrics,
 	}
-	a.gossip.Gossip(gossipMessage)
 }
 
-func (a *adapter) Accept() <-chan *leaderElecMsg {
-	var acceptor utils.MessageAcceptor = func(msg any) bool {
-		return msg.(*pgossip.GossipMessage).Tag == pgossip.GossipMessage_CHAN_AND_ORG &&
-			msg.(*pgossip.GossipMessage).GetLeadershipMsg() != nil &&
-			bytes.Equal(msg.(*pgossip.GossipMessage).Channel, a.channel)
-	}
+func (ai *adapterImpl) Gossip(msg *pgossip.GossipMessage) {
+	ai.gossip.Gossip(msg)
+}
 
-	inCh, _ := a.gossip.Accept(acceptor, false)
+func (ai *adapterImpl) Accept() <-chan *pgossip.GossipMessage {
+	adapterCh, _ := ai.gossip.Accept(func(message interface{}) bool {
+		// Get only leadership org and channel messages
+		return message.(*pgossip.GossipMessage).Tag == pgossip.GossipMessage_CHAN_AND_ORG &&
+			message.(*pgossip.GossipMessage).GetLeadershipMsg() != nil &&
+			bytes.Equal(message.(*pgossip.GossipMessage).Channel, ai.channel)
+	}, false)
 
-	msgCh := make(chan *leaderElecMsg)
-	go func(inCh <-chan *pgossip.GossipMessage, msgCh chan *leaderElecMsg, stopCh chan struct{}) {
+	msgCh := make(chan *pgossip.GossipMessage)
+
+	go func(inCh <-chan *pgossip.GossipMessage, outCh chan *pgossip.GossipMessage, stopCh chan struct{}) {
 		for {
 			select {
 			case <-stopCh:
 				return
-			case m, ok := <-inCh:
+			case gossipMsg, ok := <-inCh:
 				if ok {
-					msgCh <- &leaderElecMsg{LeadershipMessage: m.GetLeadershipMsg()}
+					outCh <- gossipMsg
+				} else {
+					return
 				}
 			}
 		}
-	}(inCh, msgCh, a.stopCh)
-
+	}(adapterCh, msgCh, ai.doneCh)
 	return msgCh
 }
 
-func (a *adapter) CreateMessage(isDeclaration bool) *leaderElecMsg {
-	a.seqNum++
-	seqNum := a.seqNum
+func (ai *adapterImpl) CreateMessage(isDeclaration bool) *pgossip.GossipMessage {
+	ai.seqNum++
+	seqNum := ai.seqNum
+
 	leadershipMsg := &pgossip.LeadershipMessage{
-		PkiId:         a.pkiID,
+		PkiId:         ai.selfPKIid,
 		IsDeclaration: isDeclaration,
 		Timestamp: &pgossip.PeerTime{
-			IncNum: a.incTime,
+			IncNum: ai.incTime,
 			SeqNum: seqNum,
 		},
 	}
 
-	return &leaderElecMsg{LeadershipMessage: leadershipMsg}
+	msg := &pgossip.GossipMessage{
+		Nonce:   0,
+		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+		Content: &pgossip.GossipMessage_LeadershipMsg{LeadershipMsg: leadershipMsg},
+		Channel: ai.channel,
+	}
+	return msg
 }
 
-// Peers 返回与自己在同一通道且在同一组织内的所有 peer 节点信息。
-func (a *adapter) Peers() []*utils.NetworkMember {
-	peers := a.gossip.PeersOfChannel(a.channel)
+func (ai *adapterImpl) Peers() []utils.NetworkMember {
+	peers := ai.gossip.PeersOfChannel(ai.channel)
 
-	var res []*utils.NetworkMember
+	var res []utils.NetworkMember
 	for _, peer := range peers {
-		if a.gossip.IsInMyOrg(peer) {
-			res = append(res, &peer)
+		if ai.gossip.IsInMyOrg(peer) {
+			res = append(res, peer)
 		}
 	}
+
 	return res
 }
 
-func (a *adapter) ReportMetrics(isLeader bool) {
-	var leadership float64 = 0.0
+func (ai *adapterImpl) ReportMetrics(isLeader bool) {
+	var leadershipBit float64
 	if isLeader {
-		leadership = 1.0
+		leadershipBit = 1
 	}
-	a.metrics.Declaration.With("channel", a.channel.String()).Set(leadership)
+	ai.metrics.Declaration.With("channel", string(ai.channel)).Set(leadershipBit)
 }
 
-func (a *adapter) Stop() {
-	a.stopOnce.Do(func() {
-		close(a.stopCh)
-	})
+func (ai *adapterImpl) Stop() {
+	stopFunc := func() {
+		close(ai.doneCh)
+	}
+	ai.stopOnce.Do(stopFunc)
 }

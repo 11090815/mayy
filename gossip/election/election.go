@@ -1,3 +1,9 @@
+/*
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
 package election
 
 import (
@@ -8,247 +14,294 @@ import (
 
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/utils"
+	"github.com/11090815/mayy/protobuf/pgossip"
 )
 
-const (
-	DefaultStartupGracePeriod       = time.Second * 15
-	DefaultMembershipSampleInterval = time.Second
-	DefaultLeaderAliveThreshold     = time.Second * 10
-	DefaultLeaderElectionDuration   = time.Second * 5
-)
+// Gossip 中的领导者选举模型
+// Algorithm properties:
+// - Peer 节点通过对比 PKI-ID 来竞选 leader。
+// - 每个 peer 节点要么是 leader，要么就是 follower，并且当全网节点的视图达到一致时，全网应该在特定时间内只有一个 leader。
+// - 如果网络被分成了 n 个区，那么应该存在 n 个 leader，但是如果当所有分片的网络聚拢到一起，最终应该只有一个 leader。
+// - Peer 节点之间通过广播 leader declaration 和 follower proposal 来协商出 leader。
 
-/* ------------------------------------------------------------------------------------------ */
+//
+//
+// 变量：
+// leaderKnown = false
+//
+// 规则：
+// 	Peer 节点监听来自其他节点的消息，只要其他节点发来一个 leader declaration，就将 leaderKnown 设置成 true。
+//
+// Startup():
+// 等待全网结构达到稳定，或者收到来自其他节点的 leader declaration，或者等待的超时时间结束。
+// 进入 SteadyState()
+//
+// SteadyState()：
+// 一直循环：
+//		如果 leaderKnown 等于 false：
+// 			进入 LeaderElection()
+//		如果自己是 leader：
+//			广播 leader declaration
+//			如果收到一个来自比自己 PKI-ID 更小的 proposal 消息，则让自己成为 follower
+//		否则如果自己是 follower：
+//			如果在超时时间内没收到 leader declaration 消息，就让 leaderKnown 等于 false
+//
+// LeaderElection()：
+// 	广播 follower proposal 消息
+//	收集一段时间内来自其他 peer 节点的 follower proposal 消息
+//	如果收到一个 leader declaration 消息：
+//		退出 LeaderElection()
+//	遍历所有 proposal，如果有 proposal 来自比自己更小的 PKI-ID 的 peer 节点，则退出 LeaderElection()，否则让自己成为 leader。
 
 type leadershipCallback func(isLeader bool)
 
-var noopCallback leadershipCallback = func(_ bool) {}
-
-/* ------------------------------------------------------------------------------------------ */
-
+// LeaderElectionService is the object that runs the leader election algorithm
 type LeaderElectionService interface {
-	// IsLeader 返回一个布尔值指示此 peer 节点是否是 leader。
+	// IsLeader returns whether this peer is a leader or not
 	IsLeader() bool
 
+	// Stop stops the LeaderElectionService
 	Stop()
 
-	// Yield 在自己已经是 leader 的情况下，调用此方法将放弃领导权，直到选出新的领导人，或者超时。
+	// Yield relinquishes the leadership until a new leader is elected,
+	// or a timeout expires
 	Yield()
 }
 
+func noopCallback(_ bool) {
+}
+
+const (
+	DefStartupGracePeriod       = time.Second * 15
+	DefMembershipSampleInterval = time.Second
+	DefLeaderAliveThreshold     = time.Second * 10
+	DefLeaderElectionDuration   = time.Second * 5
+)
+
 type ElectionConfig struct {
-	StartupGracePeriod time.Duration
-	// MembershipSampleInterval 在网络建立之初，每隔这段时间会检查一下网络状态是否达到稳定。
+	StartupGracePeriod       time.Duration
 	MembershipSampleInterval time.Duration
 	LeaderAliveThreshold     time.Duration
-	// LeaderElectionDuration 发送完 proposal 后，等待这段时间，让全网节点自己评估自己是否能够当选 leader。
-	LeaderElectionDuration time.Duration
+	LeaderElectionDuration   time.Duration
 }
 
-type leaderElectionService struct {
-	id           utils.PKIidType
-	adapter      leaderElectionAdapter
-	isLeader     int32
-	yield        int32
-	leaderExists int32
-	// yieldTimer 一个计时器，在 6 个任期后，停止放弃竞选 leader。
-	yieldTimer  *time.Timer
-	proposals   *utils.Set
-	stopCh      chan struct{}
-	stopWg      sync.WaitGroup
-	interruptCh chan struct{}
-	sleeping    bool
-	callback    leadershipCallback
-	config      ElectionConfig
-	logger      mlog.Logger
-	mutex       *sync.RWMutex
-}
-
-func NewLeaderElectionService(adapter leaderElectionAdapter, id utils.PKIidType, callback leadershipCallback, config ElectionConfig, logger mlog.Logger) LeaderElectionService {
+// NewLeaderElectionService returns a new LeaderElectionService
+func NewLeaderElectionService(adapter LeaderElectionAdapter, id utils.PKIidType, callback leadershipCallback, config ElectionConfig, logger mlog.Logger) LeaderElectionService {
 	if len(id) == 0 {
-		panic("Empty id")
+		panic("nil id")
 	}
-	srv := &leaderElectionService{
-		id:          id,
-		adapter:     adapter,
-		proposals:   utils.NewSet(),
-		stopCh:      make(chan struct{}),
-		interruptCh: make(chan struct{}),
-		callback:    noopCallback,
-		config:      config,
-		logger:      logger,
-		mutex:       &sync.RWMutex{},
+	le := &leaderElectionSvcImpl{
+		id:            id,
+		proposals:     utils.NewSet(),
+		adapter:       adapter,
+		stopChan:      make(chan struct{}),
+		interruptChan: make(chan struct{}, 1),
+		logger:        logger,
+		callback:      noopCallback,
+		config:        config,
+		mutex:         &sync.Mutex{},
 	}
 
 	if callback != nil {
-		srv.callback = callback
+		le.callback = callback
 	}
 
-	srv.start()
-	return srv
+	go le.start()
+	return le
 }
 
-func (les *leaderElectionService) IsLeader() bool {
-	return atomic.LoadInt32(&les.isLeader) == int32(1)
+// leaderElectionSvcImpl is an implementation of a LeaderElectionService
+type leaderElectionSvcImpl struct {
+	id            utils.PKIidType
+	proposals     *utils.Set
+	mutex         *sync.Mutex
+	stopChan      chan struct{}
+	interruptChan chan struct{}
+	stopWG        sync.WaitGroup
+	isLeader      int32
+	leaderExists  int32
+	yield         int32
+	sleeping      bool
+	adapter       LeaderElectionAdapter
+	logger        mlog.Logger
+	callback      leadershipCallback
+	yieldTimer    *time.Timer
+	config        ElectionConfig
 }
 
-// Yield 只有当节点是 leader 时，调用此方法才会有效，此方法的作用一是放弃自己的 leader 身份，二是在 6 个任期内，放弃竞选 leader。
-// 但是对于后一个作用，如果在之后的视图中出现了 leader，那么直接停止放弃竞选 leader。
-func (les *leaderElectionService) Yield() {
-	les.mutex.Lock()
-	defer les.mutex.Unlock()
-	if !les.IsLeader() || les.isYielding() {
-		return
-	}
-
-	atomic.StoreInt32(&les.yield, 1)
-	atomic.StoreInt32(&les.isLeader, 0)
-	les.callback(false)
-	atomic.StoreInt32(&les.leaderExists, 0)
-	les.yieldTimer = time.AfterFunc(les.config.LeaderAliveThreshold*6, func() {
-		atomic.StoreInt32(&les.yield, 0)
-	})
+func (le *leaderElectionSvcImpl) start() {
+	le.stopWG.Add(2)
+	go le.handleMessages()
+	le.waitForMembershipStabilization(le.config.StartupGracePeriod)
+	go le.run()
 }
 
-func (les *leaderElectionService) Stop() {
-	select {
-	case <-les.stopCh:
-		return
-	default:
-		close(les.stopCh)
-		les.stopWg.Wait()
-	}
-}
-
-func (les *leaderElectionService) start() {
-	les.stopWg.Add(2)
-	go les.handleMessages()
-	les.waitForMembershipStabilization(les.config.StartupGracePeriod)
-	go les.run()
-}
-
-func (les *leaderElectionService) handleMessages() {
-	defer les.stopWg.Done()
+func (le *leaderElectionSvcImpl) handleMessages() {
+	defer le.stopWG.Done()
+	msgChan := le.adapter.Accept()
 	for {
 		select {
-		case <-les.stopCh:
+		case <-le.stopChan:
 			return
-		case msg := <-les.adapter.Accept():
-			if !les.isAlive(msg.PkiId) {
-				les.logger.Warnf("Got message from a peer who is not alive.")
+		case msg := <-msgChan:
+			leaderMsg := msg.GetLeadershipMsg()
+			pkiID := utils.PKIidType(leaderMsg.PkiId)
+			if !le.isAlive(leaderMsg.PkiId) {
+				le.logger.Debugf("Got message from %s which is not in the view.", pkiID.String())
 				break
 			}
-
-			pkiID := utils.PKIidType(msg.PkiId)
-			msgType := "proposal"
-			if msg.IsDeclaration() {
-				msgType = "declaration"
-			}
-			les.logger.Debugf("Peer %s sent us %s.", pkiID.String(), msgType)
-
-			if msgType == "proposal" {
-				les.proposals.Add(pkiID)
-			} else if msgType == "declaration" {
-				atomic.StoreInt32(&les.leaderExists, 1)
-				if les.sleeping && len(les.interruptCh) == 0 {
-					les.mutex.Lock()
-					les.interruptCh <- struct{}{}
-					les.mutex.Unlock()
-				}
-				if bytes.Compare(pkiID, les.id) < 0 && les.IsLeader() {
-					atomic.StoreInt32(&les.isLeader, 0)
-					les.callback(false)
-				}
-			}
+			le.handleMessage(leaderMsg)
 		}
 	}
 }
 
-func (les *leaderElectionService) run() {
-	defer les.stopWg.Done()
-	for !les.isClosed() {
-		if !les.isLeaderExists() {
-			les.leaderElection()
-		}
+func (le *leaderElectionSvcImpl) handleMessage(msg *pgossip.LeadershipMessage) {
+	pkiID := utils.PKIidType(msg.PkiId)
+	le.mutex.Lock()
+	defer le.mutex.Unlock()
 
-		if les.isLeaderExists() && les.isYielding() {
-			// 如果有人当选了 leader，并且自己已经放弃竞选 leader，那么就停止放弃竞选 leader。
-			atomic.StoreInt32(&les.yield, 0)
-			les.mutex.Lock()
-			les.yieldTimer.Stop()
-			les.mutex.Unlock()
+	if !msg.IsDeclaration {
+		le.logger.Debugf("Peer %s sent us a proposal.", pkiID.String())
+		le.proposals.Add(pkiID.String())
+	} else {
+		le.logger.Debugf("Peer %s sent us a leader declaration.", pkiID.String())
+		atomic.StoreInt32(&le.leaderExists, int32(1))
+		if le.sleeping && len(le.interruptChan) == 0 {
+			le.interruptChan <- struct{}{}
 		}
-
-		if les.IsLeader() { // 如果自己有资格当 leader，就把此消息广而告之给其他节点。
-			leaderDeclaration := les.adapter.CreateMessage(true)
-			les.adapter.Gossip(leaderDeclaration)
-			les.adapter.ReportMetrics(true)
-			les.waitForInterrupt(les.config.LeaderAliveThreshold / 2)
-		} else { // 自己尚无资格担任 leader，在这里卡住一段时间，这段时间即是 leader 的一轮任期时间
-			les.proposals.Clear()
-			atomic.StoreInt32(&les.leaderExists, 0)
-			les.adapter.ReportMetrics(false)
-			select {
-			case <-time.After(les.config.LeaderAliveThreshold):
-			case <-les.stopCh:
-			}
+		if bytes.Compare(pkiID, le.id) < 0 && le.IsLeader() {
+			le.stopBeingLeader()
 		}
 	}
 }
 
-func (les *leaderElectionService) leaderElection() {
-	// 1. 首先判断自己是否放弃竞选 leader，如果已放弃，则直接退出。
-	if les.isYielding() {
+// waitForInterrupt sleeps until the interrupt channel is triggered
+// or given timeout expires
+func (le *leaderElectionSvcImpl) waitForInterrupt(timeout time.Duration) {
+	le.mutex.Lock()
+	le.sleeping = true
+	le.mutex.Unlock()
+
+	select {
+	case <-le.interruptChan:
+	case <-le.stopChan:
+	case <-time.After(timeout):
+	}
+
+	le.mutex.Lock()
+	le.sleeping = false
+	// We drain the interrupt channel
+	// because we might get 2 leadership declarations messages
+	// while sleeping, but we would only read 1 of them in the select block above
+	le.drainInterruptChannel()
+	le.mutex.Unlock()
+}
+
+func (le *leaderElectionSvcImpl) run() {
+	defer le.stopWG.Done()
+	for !le.isClosed() {
+		if !le.isLeaderExists() {
+			le.leaderElection()
+		}
+		// If we are yielding and some leader has been elected,
+		// stop yielding
+		if le.isLeaderExists() && le.isYielding() {
+			le.stopYielding()
+		}
+		if le.isClosed() {
+			return
+		}
+		if le.IsLeader() {
+			le.leader()
+		} else {
+			le.follower()
+		}
+	}
+}
+
+func (le *leaderElectionSvcImpl) leaderElection() {
+	if le.isYielding() {
+		return
+	}
+	// Propose ourselves as a leader
+	le.propose()
+	// Collect other proposals
+	le.waitForInterrupt(le.config.LeaderElectionDuration)
+	// If someone declared itself as a leader, give up
+	// on trying to become a leader too
+	if le.isLeaderExists() {
+		le.logger.Info("Some peer is already a leader.")
 		return
 	}
 
-	// 2. 广播自己的提案，内含自己的 ID 值。
-	proposal := les.adapter.CreateMessage(false)
-	les.adapter.Gossip(proposal)
-
-	// 3. 自己的提案已发送出去，我们等待一个 leader 选举的超时时间，看看是不是有人已经宣告自己是 leader 了。
-	les.waitForInterrupt(les.config.LeaderElectionDuration)
-	if les.isLeaderExists() {
-		les.logger.Info("Some peer is already a leader.")
+	if le.isYielding() {
+		le.logger.Debug("Aborting leader election because yielding.")
 		return
 	}
-
-	// 4. 到目前为止，还没有人宣告自己是 leader，但是再检查一下自己是否放弃了选举。
-	if les.isYielding() {
-		les.logger.Debug("Aborting leader election because yielding.")
-		return
-	}
-
-	// 5. 到目前为止，没有人认为他们自己有资格当选 leader，那么我自己检查一下，看看是不是自己能够当选。
-	for _, proposal := range les.proposals.ToArray() {
-		id := proposal.(utils.PKIidType)
-		if bytes.Compare(id, les.id) < 0 {
-			// 有比自己更适合成为 leader 的候选节点。
+	// Leader doesn't exist, let's see if there is a better candidate than us
+	// for being a leader
+	for _, o := range le.proposals.ToArray() {
+		id := o.(string)
+		if bytes.Compare(utils.StringToPKIidType(id), le.id) < 0 {
 			return
 		}
 	}
-
-	// 6. 最终到了这里，可以明确自己有资格当选 leader
-	atomic.StoreInt32(&les.isLeader, 1)
-	les.callback(true)
-	atomic.StoreInt32(&les.leaderExists, 1)
+	// If we got here, there is no one that proposed being a leader
+	// that's a better candidate than us.
+	le.beLeader()
+	atomic.StoreInt32(&le.leaderExists, int32(1))
 }
 
-func (les *leaderElectionService) waitForMembershipStabilization(timelimit time.Duration) {
-	endTime := time.Now().Add(timelimit)
-	viewSize := len(les.adapter.Peers())
-	for !les.isClosed() {
-		time.Sleep(les.config.MembershipSampleInterval)
-		newSize := len(les.adapter.Peers())
-		if newSize == viewSize || time.Now().After(endTime) || les.isLeaderExists() {
+// propose sends a leadership proposal message to remote peers
+func (le *leaderElectionSvcImpl) propose() {
+	leadershipProposal := le.adapter.CreateMessage(false)
+	le.adapter.Gossip(leadershipProposal)
+}
+
+func (le *leaderElectionSvcImpl) follower() {
+	le.proposals.Clear()
+	atomic.StoreInt32(&le.leaderExists, int32(0))
+	le.adapter.ReportMetrics(false)
+	select {
+	case <-time.After(le.config.LeaderAliveThreshold):
+	case <-le.stopChan:
+	}
+}
+
+func (le *leaderElectionSvcImpl) leader() {
+	leaderDeclaration := le.adapter.CreateMessage(true)
+	le.adapter.Gossip(leaderDeclaration)
+	le.adapter.ReportMetrics(true)
+	le.waitForInterrupt(le.config.LeaderAliveThreshold / 2)
+}
+
+// waitForMembershipStabilization waits for membership view to stabilize
+// or until a time limit expires, or until a peer declares itself as a leader
+func (le *leaderElectionSvcImpl) waitForMembershipStabilization(timeLimit time.Duration) {
+	defer le.logger.Debugf("A total of %d peers are found.", len(le.adapter.Peers()))
+	endTime := time.Now().Add(timeLimit)
+	viewSize := len(le.adapter.Peers())
+	for !le.isClosed() {
+		time.Sleep(le.config.MembershipSampleInterval)
+		newSize := len(le.adapter.Peers())
+		if newSize == viewSize || time.Now().After(endTime) || le.isLeaderExists() {
 			return
 		}
 		viewSize = newSize
 	}
 }
 
-// isAlive 给定一个 peer 节点的 id，判断此节点在本节点此时视图内是否是 alive 的。
-func (les *leaderElectionService) isAlive(id utils.PKIidType) bool {
-	for _, p := range les.adapter.Peers() {
+// drainInterruptChannel clears the interruptChannel
+// if needed
+func (le *leaderElectionSvcImpl) drainInterruptChannel() {
+	if len(le.interruptChan) == 1 {
+		<-le.interruptChan
+	}
+}
+
+// isAlive returns whether peer of given id is considered alive
+func (le *leaderElectionSvcImpl) isAlive(id utils.PKIidType) bool {
+	for _, p := range le.adapter.Peers() {
 		if bytes.Equal(p.PKIid, id) {
 			return true
 		}
@@ -256,45 +309,76 @@ func (les *leaderElectionService) isAlive(id utils.PKIidType) bool {
 	return false
 }
 
-// waitForInterrupt 如果有人宣告自己是 leader，或者 timeout 超时，则此函数不再阻塞进程。
-func (les *leaderElectionService) waitForInterrupt(timeout time.Duration) {
-	les.mutex.Lock()
-	les.sleeping = true
-	les.mutex.Unlock()
+func (le *leaderElectionSvcImpl) isLeaderExists() bool {
+	return atomic.LoadInt32(&le.leaderExists) == int32(1)
+}
 
+// IsLeader returns whether this peer is a leader
+func (le *leaderElectionSvcImpl) IsLeader() bool {
+	isLeader := atomic.LoadInt32(&le.isLeader) == int32(1)
+	return isLeader
+}
+
+func (le *leaderElectionSvcImpl) beLeader() {
+	atomic.StoreInt32(&le.isLeader, int32(1))
+	le.callback(true)
+	le.logger.Info("Becoming a leader.")
+}
+
+func (le *leaderElectionSvcImpl) stopBeingLeader() {
+	le.logger.Info("Stopped being a leader.")
+	atomic.StoreInt32(&le.isLeader, int32(0))
+	le.callback(false)
+}
+
+func (le *leaderElectionSvcImpl) isClosed() bool {
 	select {
-	case <-les.interruptCh:
-	case <-les.stopCh:
-	case <-time.After(timeout):
-	}
-
-	les.mutex.Lock()
-	les.sleeping = false
-	les.drainInterruptChannel()
-	les.mutex.Unlock()
-}
-
-// drainInterruptChannel 清空 interruptCh 通道。
-func (les *leaderElectionService) drainInterruptChannel() {
-	if len(les.interruptCh) == 1 {
-		<-les.interruptCh
-	}
-}
-
-func (les *leaderElectionService) isLeaderExists() bool {
-	return atomic.LoadInt32(&les.leaderExists) == int32(1)
-}
-
-// isYielding 是否处在放弃竞选 leader 的状态。
-func (les *leaderElectionService) isYielding() bool {
-	return atomic.LoadInt32(&les.yield) == int32(1)
-}
-
-func (les *leaderElectionService) isClosed() bool {
-	select {
-	case <-les.stopCh:
+	case <-le.stopChan:
 		return true
 	default:
 		return false
+	}
+}
+
+func (le *leaderElectionSvcImpl) isYielding() bool {
+	return atomic.LoadInt32(&le.yield) == int32(1)
+}
+
+func (le *leaderElectionSvcImpl) stopYielding() {
+	le.logger.Debug("Stopped yielding.")
+	le.mutex.Lock()
+	defer le.mutex.Unlock()
+	atomic.StoreInt32(&le.yield, int32(0))
+	le.yieldTimer.Stop()
+}
+
+// Yield relinquishes the leadership until a new leader is elected,
+// or a timeout expires
+func (le *leaderElectionSvcImpl) Yield() {
+	le.mutex.Lock()
+	defer le.mutex.Unlock()
+	if !le.IsLeader() || le.isYielding() {
+		return
+	}
+	// Turn on the yield flag
+	atomic.StoreInt32(&le.yield, int32(1))
+	// Stop being a leader
+	le.stopBeingLeader()
+	// Clear the leader exists flag since it could be that we are the leader
+	atomic.StoreInt32(&le.leaderExists, int32(0))
+	// Clear the yield flag in any case afterwards
+	le.yieldTimer = time.AfterFunc(le.config.LeaderAliveThreshold*6, func() {
+		atomic.StoreInt32(&le.yield, int32(0))
+	})
+}
+
+// Stop stops the LeaderElectionService
+func (le *leaderElectionSvcImpl) Stop() {
+	select {
+	case <-le.stopChan:
+	default:
+		close(le.stopChan)
+		le.logger.Info("Stopped leader election service.")
+		le.stopWG.Wait()
 	}
 }

@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/11090815/mayy/protobuf/pcommon"
@@ -20,6 +21,17 @@ func (id PKIidType) String() string {
 	}
 	return hex.EncodeToString(id)
 	// return string(id)
+}
+
+func StringToPKIidType(idStr string) PKIidType {
+	if idStr == "<nil>" {
+		return nil
+	}
+	id, err := hex.DecodeString(idStr)
+	if err != nil {
+		panic(fmt.Sprintf("failed unmarshal pki-id: %s", err.Error()))
+	}
+	return PKIidType(id)
 }
 
 // IsNotSameFilter 如果给定的另一个 id 与本 id 不一样，则返回 true。

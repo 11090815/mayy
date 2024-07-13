@@ -9,15 +9,15 @@ import (
 /* ------------------------------------------------------------------------------------------ */
 
 type Logger interface {
-	Debug(msg string)
+	Debug(args ...any)
 	Debugf(format string, args ...interface{})
-	Info(msg string)
+	Info(args ...any)
 	Infof(format string, args ...interface{})
-	Warn(msg string)
+	Warn(args ...any)
 	Warnf(format string, args ...interface{})
-	Error(msg string)
+	Error(args ...any)
 	Errorf(format string, args ...interface{})
-	Panic(msg string)
+	Panic(args ...any)
 	Panicf(format string, args ...interface{})
 	With(key, value string) Logger
 	Stop() error
@@ -117,9 +117,17 @@ func GetTestLogger(module string, lvl Level, printPath ...bool) Logger {
 	return l
 }
 
-func (l *logger) Debug(msg string) {
+func (l *logger) Debug(args ...any) {
 	if l.silent(DebugLevel) {
 		return
+	}
+	var msg string
+	for i, arg := range args {
+		if i == 0 {
+			msg = fmt.Sprintf("%v", arg)
+		} else {
+			msg = fmt.Sprintf("%s %v", msg, arg)
+		}
 	}
 	l.log(newEntry(now(), l.module, DebugLevel, msg, l.ctxStr(), l.printPath))
 }
@@ -131,9 +139,17 @@ func (l *logger) Debugf(format string, args ...interface{}) {
 	l.log(newEntry(now(), l.module, DebugLevel, fmt.Sprintf(format, args...), l.ctxStr(), l.printPath))
 }
 
-func (l *logger) Info(msg string) {
+func (l *logger) Info(args ...any) {
 	if l.silent(InfoLevel) {
 		return
+	}
+	var msg string
+	for i, arg := range args {
+		if i == 0 {
+			msg = fmt.Sprintf("%v", arg)
+		} else {
+			msg = fmt.Sprintf("%s %v", msg, arg)
+		}
 	}
 	l.log(newEntry(now(), l.module, InfoLevel, msg, l.ctxStr(), l.printPath))
 }
@@ -145,9 +161,17 @@ func (l *logger) Infof(format string, args ...interface{}) {
 	l.log(newEntry(now(), l.module, InfoLevel, fmt.Sprintf(format, args...), l.ctxStr(), l.printPath))
 }
 
-func (l *logger) Warn(msg string) {
+func (l *logger) Warn(args ...any) {
 	if l.silent(WarnLevel) {
 		return
+	}
+	var msg string
+	for i, arg := range args {
+		if i == 0 {
+			msg = fmt.Sprintf("%v", arg)
+		} else {
+			msg = fmt.Sprintf("%s %v", msg, arg)
+		}
 	}
 	l.log(newEntry(now(), l.module, WarnLevel, msg, l.ctxStr(), l.printPath))
 }
@@ -159,9 +183,17 @@ func (l *logger) Warnf(format string, args ...interface{}) {
 	l.log(newEntry(now(), l.module, WarnLevel, fmt.Sprintf(format, args...), l.ctxStr(), l.printPath))
 }
 
-func (l *logger) Error(msg string) {
+func (l *logger) Error(args ...any) {
 	if l.silent(ErrorLevel) {
 		return
+	}
+	var msg string
+	for i, arg := range args {
+		if i == 0 {
+			msg = fmt.Sprintf("%v", arg)
+		} else {
+			msg = fmt.Sprintf("%s %v", msg, arg)
+		}
 	}
 	l.log(newEntry(now(), l.module, ErrorLevel, msg, l.ctxStr(), l.printPath))
 }
@@ -173,9 +205,17 @@ func (l *logger) Errorf(format string, args ...interface{}) {
 	l.log(newEntry(now(), l.module, ErrorLevel, fmt.Sprintf(format, args...), l.ctxStr(), l.printPath))
 }
 
-func (l *logger) Panic(msg string) {
+func (l *logger) Panic(args ...any) {
 	if l.silent(PanicLevel) {
 		return
+	}
+	var msg string
+	for i, arg := range args {
+		if i == 0 {
+			msg = fmt.Sprintf("%v", arg)
+		} else {
+			msg = fmt.Sprintf("%s %v", msg, arg)
+		}
 	}
 	l.log(newEntry(now(), l.module, PanicLevel, msg, l.ctxStr(), l.printPath))
 }

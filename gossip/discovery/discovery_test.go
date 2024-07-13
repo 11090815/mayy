@@ -33,7 +33,7 @@ var (
 	}
 
 	// noopPolicy 不做任何过滤操作，不论是谁发出 request 请求，都会将 response 原封不动的反馈给它。
-	noopPolicy = func(remotePeer *NetworkMember) (Sieve, EnvelopeFilter) {
+	noopPolicy = func(remotePeer *utils.NetworkMember) (Sieve, EnvelopeFilter) {
 		return func(message *utils.SignedGossipMessage) bool {
 				return true
 			}, func(message *utils.SignedGossipMessage) *pgossip.Envelope {
@@ -165,7 +165,7 @@ func (comm *mockCommModule) Forward(msg utils.ReceivedMessage) {
 	}
 }
 
-func (comm *mockCommModule) SendToPeer(peer *NetworkMember, msg *utils.SignedGossipMessage) {
+func (comm *mockCommModule) SendToPeer(peer *utils.NetworkMember, msg *utils.SignedGossipMessage) {
 	if comm.disableComm {
 		return
 	}
@@ -192,7 +192,7 @@ func (comm *mockCommModule) SendToPeer(peer *NetworkMember, msg *utils.SignedGos
 	atomic.AddUint32(&comm.msgsSent, 1)
 }
 
-func (comm *mockCommModule) Ping(peer *NetworkMember) bool {
+func (comm *mockCommModule) Ping(peer *utils.NetworkMember) bool {
 	if comm.disableComm {
 		return false
 	}
@@ -232,7 +232,7 @@ func (comm *mockCommModule) PresumedDead() <-chan utils.PKIidType {
 	return comm.presumedDead
 }
 
-func (comm *mockCommModule) CloseConn(peer *NetworkMember) {
+func (comm *mockCommModule) CloseConn(peer *utils.NetworkMember) {
 	comm.mutex.Lock()
 	defer comm.mutex.Unlock()
 
@@ -409,7 +409,7 @@ func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrap
 	}
 
 	endpoint := fmt.Sprintf("localhost:%d", port)
-	self := NetworkMember{
+	self := utils.NetworkMember{
 		Metadata:         []byte{},
 		PKIid:            []byte(id),
 		Endpoint:         endpoint,
@@ -428,7 +428,7 @@ func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrap
 	}
 	discoveryService := NewDiscoveryService(self, comm, comm, policy, config, anchorPeerTracker, logger)
 	for _, bootPeer := range bootstrapPeers {
-		discoveryService.Connect(NetworkMember{Endpoint: bootPeer, InternalEndpoint: bootPeer}, func() (*PeerIdentification, error) {
+		discoveryService.Connect(utils.NetworkMember{Endpoint: bootPeer, InternalEndpoint: bootPeer}, func() (*PeerIdentification, error) {
 			return &PeerIdentification{SelfOrg: true, PKIid: utils.PKIidType(bootPeer)}, nil
 		})
 	}
@@ -511,7 +511,7 @@ func stopInstances(t *testing.T, instances []*gossipInstance) {
 /* ------------------------------------------------------------------------------------------ */
 
 func TestClone(t *testing.T) {
-	nm := &NetworkMember{
+	nm := &utils.NetworkMember{
 		PKIid: []byte("pkiID"),
 		Properties: &pgossip.Properties{
 			LedgerHeight: 10,
@@ -534,9 +534,9 @@ func TestClone(t *testing.T) {
 }
 
 func TestToString(t *testing.T) {
-	nm1 := &NetworkMember{Endpoint: "a", InternalEndpoint: "b"}
+	nm1 := &utils.NetworkMember{Endpoint: "a", InternalEndpoint: "b"}
 	require.Equal(t, "b", nm1.PreferredEndpoint())
-	nm2 := &NetworkMember{Endpoint: "a"}
+	nm2 := &utils.NetworkMember{Endpoint: "a"}
 	require.Equal(t, "a", nm2.PreferredEndpoint())
 
 	fmt.Println(nm1.String())
@@ -584,7 +584,7 @@ func TestConnect(t *testing.T) {
 		instances = append(instances, inst)
 		j := (i + 1) % nodeNum
 		endpoint := fmt.Sprintf("localhost:%d", 2048+j)
-		networkMember2Connect2 := NetworkMember{Endpoint: endpoint, PKIid: []byte(endpoint)}
+		networkMember2Connect2 := utils.NetworkMember{Endpoint: endpoint, PKIid: []byte(endpoint)}
 		inst.Connect(networkMember2Connect2, func() (*PeerIdentification, error) {
 			return &PeerIdentification{SelfOrg: false, PKIid: nil}, nil
 		})

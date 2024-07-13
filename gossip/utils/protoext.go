@@ -375,3 +375,29 @@ func PeerTimeToString(pt *pgossip.PeerTime) string {
 	}
 	return fmt.Sprintf("{PeerTime | IncNum: %d; SeqNum: %d}", pt.IncNum, pt.SeqNum)
 }
+
+/* ------------------------------------------------------------------------------------------ */
+
+func IsPullMsg(m *pgossip.GossipMessage) bool {
+	return m.GetDataReq() != nil || m.GetDataUpdate() != nil || m.GetHello() != nil || m.GetDataDig() != nil
+}
+
+func GetPullMsgType(m *pgossip.GossipMessage) pgossip.PullMsgType {
+	if helloMsg := m.GetHello(); helloMsg != nil {
+		return helloMsg.MsgType
+	}
+
+	if dataReq := m.GetDataReq(); dataReq != nil {
+		return dataReq.MsgType
+	}
+
+	if dataUpdate := m.GetDataUpdate(); dataUpdate != nil {
+		return dataUpdate.MsgType
+	}
+
+	if dataDig := m.GetDataDig(); dataDig != nil {
+		return dataDig.MsgType
+	}
+
+	return pgossip.PullMsgType_UNDEFINED
+}

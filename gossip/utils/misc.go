@@ -82,9 +82,26 @@ func Contains(a string, b []string) bool {
 	return false
 }
 
+// GetRandomIndices 随机获取区间 [0:highestIndex] 内 indiceCount 个整数。
 func GetRandomIndices(indiceCount, highestIndex int) []int {
 	if highestIndex+1 < indiceCount {
 		return nil
 	}
-	return random.Perm(highestIndex+1)[:indiceCount]
+	return random.Perm(highestIndex + 1)[:indiceCount]
+}
+
+func BytesToStrings(bzs [][]byte) []string {
+	strs := make([]string, len(bzs))
+	for i, bz := range bzs {
+		strs[i] = string(bz)
+	}
+	return strs
+}
+
+func StringsToBytes(strs []string) [][]byte {
+	bzs := make([][]byte, len(strs))
+	for i, str := range strs {
+		bzs[i] = []byte(str)
+	}
+	return bzs
 }
