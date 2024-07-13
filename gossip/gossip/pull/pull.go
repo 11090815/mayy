@@ -109,6 +109,37 @@ type pullMediator struct {
 	engine        algo.PullEngine
 }
 
+func NewPullMediator(config PullConfig, adapter *PullAdapter, logger mlog.Logger) PullMediator {
+	egressDigFilter := adapter.EgressDigestFilter
+	acceptAllFilter := func(utils.ReceivedMessage) func(string) bool {
+		return func(string) bool {
+			return true
+		}
+	}
+	if egressDigFilter == nil {
+		egressDigFilter = acceptAllFilter
+	}
+
+	pm := &pullMediator{
+		PullAdapter:   adapter,
+		msgType2Hooks: make(map[MsgType][]MessageHook),
+		config:        config,
+		logger:        logger,
+		itemID2Msg:    make(map[string]*utils.SignedGossipMessage),
+		mutex:         &sync.RWMutex{},
+	}
+
+	pm.engine = algo.NewPullEngineWithFilter(pm, config.PullInterval, egressDigFilter.byContext(), config.PullEngineConfig)
+
+	if adapter.IngressDigestFilter == nil {
+		adapter.IngressDigestFilter = func(digestMsg *pgossip.DataDigest) *pgossip.DataDigest {
+			return digestMsg
+		}
+	}
+
+	return pm
+}
+
 func (pm *pullMediator) HandleMessage(msg utils.ReceivedMessage) {
 	if msg.GetSignedGossipMessage() == nil || !utils.IsPullMsg(msg.GetSignedGossipMessage().GossipMessage) {
 		return
@@ -284,6 +315,15 @@ func (pm *pullMediator) peersWithEndpoints(endpoints ...string) []*comm.RemotePe
 		}
 	}
 	return peers
+}
+
+func (pm *pullMediator) SelectPeers() []string {
+	remotePeers := SelectEndpoints(pm.config.PeerCountToSelect, pm.MembershipService.GetMembership())
+	endpoints := make([]string, len(remotePeers))
+	for i, peer := range remotePeers {
+		endpoints[i] = peer.Endpoint
+	}
+	return endpoints
 }
 
 func (pm *pullMediator) hooksByMsgType(msgType MsgType) []MessageHook {

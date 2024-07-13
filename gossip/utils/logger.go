@@ -10,6 +10,7 @@ const (
 	CommLogger      = "gossip.comm"
 	DiscoveryLogger = "gossip.discovery"
 	ElectionLogger  = "gossip.election"
+	PullLogger      = "gossip.pull"
 )
 
 var (
