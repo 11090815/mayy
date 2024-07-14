@@ -188,7 +188,7 @@ func (pm *pullMediator) HandleMessage(msg utils.ReceivedMessage) {
 		pm.engine.OnRes(itemIDs, dataUpdate.Nonce)
 	}
 
-	for _, hook := range pm.msgType2Hooks[pullMsgType] {
+	for _, hook := range pm.hooksByMsgType(pullMsgType) {
 		hook(itemIDs, items, msg)
 	}
 }
