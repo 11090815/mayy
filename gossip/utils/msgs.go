@@ -26,14 +26,14 @@ type ReceivedMessage interface {
 /* ------------------------------------------------------------------------------------------ */
 
 type ConnectionInfo struct {
-	ID       PKIidType
-	Auth     *AuthInfo
+	PkiID    PKIidType
+	AuthInfo *AuthInfo
 	Identity PeerIdentityType
 	Endpoint string
 }
 
 func (info *ConnectionInfo) String() string {
-	return fmt.Sprintf("{ConnectionInfo | Endpoint: %s; PKI-ID: %s}", info.Endpoint, info.ID.String())
+	return fmt.Sprintf("{ConnectionInfo | Endpoint: %s; PKI-ID: %s}", info.Endpoint, info.PkiID.String())
 }
 
 /* ------------------------------------------------------------------------------------------ */

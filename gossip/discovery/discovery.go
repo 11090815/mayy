@@ -154,7 +154,7 @@ func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter batchingEmitte
 			}
 			emitter.Add(&emittedGossipMessage{
 				SignedGossipMessage: msg.GetSignedGossipMessage(),
-				filter:              msg.GetConnectionInfo().ID.IsNotSameFilter,
+				filter:              msg.GetConnectionInfo().PkiID.IsNotSameFilter,
 			})
 		},
 		disclosurePolicy: disclosurePolicy,

@@ -45,7 +45,7 @@ func newPushPullTestInstance(name string, peers map[string]*pullTestInstance) *p
 		ResponseWaitTime: time.Millisecond * 200,
 	}
 
-	inst.PullEngine = NewPullEngine(inst, time.Millisecond*500, config)
+	inst.PullEngine = NewPullEngine(inst, time.Millisecond*500, config, utils.GetLogger(utils.PullLogger, "p1", mlog.DebugLevel, true, true))
 
 	peers[name] = inst
 

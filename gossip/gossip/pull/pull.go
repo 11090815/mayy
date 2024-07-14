@@ -28,7 +28,8 @@ type MessageHook func(itemIDs []string, items []*utils.SignedGossipMessage, msg 
 // IngressDigestFilter 根据条件从远端对等体中筛选出符合规则的摘要。
 type IngressDigestFilter func(digestMsg *pgossip.DataDigest) *pgossip.DataDigest
 
-// EgressDigestFilter 过滤要发送给远端对等体的摘要。
+// EgressDigestFilter 过滤要发送给远端对等体的摘要，这里的 ReceivedMessage 内含有消息发送者的信息，那么可以根
+// 据这个发送者的消息过滤掉不想发送的 digest 消息。
 type EgressDigestFilter func(helloMsg utils.ReceivedMessage) func(digestItem string) bool
 
 // byContext 根据给定的上下文信息，获取一个针对某个 digest 的过滤器，然后调用 EgressDigestFilter 过滤 digest。
@@ -129,7 +130,7 @@ func NewPullMediator(config PullConfig, adapter *PullAdapter, logger mlog.Logger
 		mutex:         &sync.RWMutex{},
 	}
 
-	pm.engine = algo.NewPullEngineWithFilter(pm, config.PullInterval, egressDigFilter.byContext(), config.PullEngineConfig)
+	pm.engine = algo.NewPullEngineWithFilter(pm, config.PullInterval, egressDigFilter.byContext(), config.PullEngineConfig, logger)
 
 	if adapter.IngressDigestFilter == nil {
 		adapter.IngressDigestFilter = func(digestMsg *pgossip.DataDigest) *pgossip.DataDigest {
@@ -158,10 +159,10 @@ func (pm *pullMediator) HandleMessage(msg utils.ReceivedMessage) {
 		pullMsgType = HelloMsgType
 		pm.engine.OnHello(helloMsg.Nonce, msg)
 	} else if dataDig := sgm.GetDataDig(); dataDig != nil {
-		digest := pm.IngressDigestFilter(dataDig)
-		itemIDs = utils.BytesToStrings(dataDig.Digests)
+		filteredDigest := pm.IngressDigestFilter(dataDig)
+		itemIDs = utils.BytesToStrings(filteredDigest.Digests)
 		pullMsgType = DigestMsgType
-		pm.engine.OnDigests(itemIDs, digest.Nonce, msg)
+		pm.engine.OnDigests(itemIDs, filteredDigest.Nonce, msg)
 	} else if dataReq := sgm.GetDataReq(); dataReq != nil {
 		itemIDs = utils.BytesToStrings(dataReq.Digests)
 		pullMsgType = RequestMsgType
@@ -236,7 +237,7 @@ func (pm *pullMediator) Hello(endpoint string, nonce uint64) {
 		pm.logger.Errorf("Failed creating signed Hello message: %s.", err.Error())
 		return
 	}
-	pm.logger.Debugf("Send %s hello message to %s.", pm.config.MsgType, endpoint)
+	pm.logger.Debugf("Send %s hello message with nonce %d to %s.", pm.config.MsgType, nonce, endpoint)
 	pm.Sender.Send(sgm, pm.peersWithEndpoints(endpoint)...)
 }
 
@@ -254,7 +255,7 @@ func (pm *pullMediator) SendDigest(digest []string, nonce uint64, context any) {
 	}
 
 	remotePeer := context.(utils.ReceivedMessage).GetConnectionInfo()
-	pm.logger.Debugf("Send %s digest message %s to %s@%s.", pm.config.MsgType, utils.DataDigestToString(digestMsg.GetDataDig()), remotePeer.ID, remotePeer.Endpoint)
+	pm.logger.Debugf("Send %s digest message %s to %s@%s.", pm.config.MsgType, utils.DataDigestToString(digestMsg.GetDataDig()), remotePeer.PkiID, remotePeer.Endpoint)
 	context.(utils.ReceivedMessage).Respond(digestMsg)
 }
 
@@ -301,7 +302,7 @@ func (pm *pullMediator) SendRes(items []string, nonce uint64, context any) {
 		},
 	}
 	remotePeer := context.(utils.ReceivedMessage).GetConnectionInfo()
-	pm.logger.Debugf("Send %s response message %s to %s@%s.", pm.config.MsgType, utils.DataUpdateToString(dataUpdate.GetDataUpdate()), remotePeer.ID.String(), remotePeer.Endpoint)
+	pm.logger.Debugf("Send %s response message %s to %s@%s.", pm.config.MsgType, utils.DataUpdateToString(dataUpdate.GetDataUpdate()), remotePeer.PkiID.String(), remotePeer.Endpoint)
 	context.(utils.ReceivedMessage).Respond(dataUpdate)
 }
 

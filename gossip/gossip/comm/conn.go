@@ -140,15 +140,15 @@ func (cs *connStore) onConnected(serverStream pgossip.Gossip_GossipStreamServer,
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
-	if conn, exists := cs.pki2Conn[connInfo.ID.String()]; exists {
+	if conn, exists := cs.pki2Conn[connInfo.PkiID.String()]; exists {
 		conn.close()
 	}
 
 	conn := newConnection(nil, nil, serverStream, metrics, cs.config)
-	conn.pkiID = connInfo.ID
+	conn.pkiID = connInfo.PkiID
 	conn.info = connInfo
 	conn.logger = cs.logger
-	cs.pki2Conn[connInfo.ID.String()] = conn
+	cs.pki2Conn[connInfo.PkiID.String()] = conn
 	return conn
 }
 

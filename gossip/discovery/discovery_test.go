@@ -288,7 +288,7 @@ func (g *gossipInstance) GossipStream(stream pgossip.Gossip_GossipStreamServer) 
 		g.comm.incMsgs <- &mockReceivedMessage{
 			msg: sgm,
 			info: &utils.ConnectionInfo{
-				ID: utils.PKIidType("testID"),
+				PkiID: utils.PKIidType("testID"),
 			},
 		}
 		atomic.AddUint32(&g.comm.msgsReceived, 1)
@@ -569,7 +569,7 @@ func TestBadInput(t *testing.T) {
 	inst.discoveryImpl().handleMsgFromComm(&mockReceivedMessage{
 		msg: sgm,
 		info: &utils.ConnectionInfo{
-			ID: []byte("pkiID"),
+			PkiID: []byte("pkiID"),
 		},
 	})
 	inst.Stop()
@@ -617,7 +617,7 @@ func TestValidation(t *testing.T) {
 		return &mockReceivedMessage{
 			msg: msg,
 			info: &utils.ConnectionInfo{
-				ID: utils.PKIidType("testID"),
+				PkiID: utils.PKIidType("testID"),
 			},
 		}
 	}

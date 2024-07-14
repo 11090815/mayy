@@ -376,11 +376,11 @@ func TestMutualParallelSendWithAck(t *testing.T) {
 func TestHandshake1(t *testing.T) {
 	assertPositivePath := func(msg utils.ReceivedMessage, endpoint string) {
 		expectedPKIID := utils.PKIidType(endpoint)
-		require.Equal(t, expectedPKIID, msg.GetConnectionInfo().ID)
+		require.Equal(t, expectedPKIID, msg.GetConnectionInfo().PkiID)
 		require.Equal(t, utils.PeerIdentityType(endpoint), msg.GetConnectionInfo().Identity)
-		require.NotNil(t, msg.GetConnectionInfo().Auth)
-		sig, _ := signer(msg.GetConnectionInfo().Auth.SignedData)
-		require.Equal(t, sig, msg.GetConnectionInfo().Auth.Signature)
+		require.NotNil(t, msg.GetConnectionInfo().AuthInfo)
+		sig, _ := signer(msg.GetConnectionInfo().AuthInfo.SignedData)
+		require.Equal(t, sig, msg.GetConnectionInfo().AuthInfo.Signature)
 	}
 
 	port, endpoint, listener := getAvailablePort(t)
@@ -412,11 +412,11 @@ func TestHandshake1(t *testing.T) {
 func TestHandshake2(t *testing.T) {
 	assertPositivePath := func(msg utils.ReceivedMessage, endpoint string) {
 		expectedPKIID := utils.PKIidType(endpoint)
-		require.Equal(t, expectedPKIID, msg.GetConnectionInfo().ID)
+		require.Equal(t, expectedPKIID, msg.GetConnectionInfo().PkiID)
 		require.Equal(t, utils.PeerIdentityType(endpoint), msg.GetConnectionInfo().Identity)
-		require.NotNil(t, msg.GetConnectionInfo().Auth)
-		sig, _ := signer(msg.GetConnectionInfo().Auth.SignedData)
-		require.Equal(t, sig, msg.GetConnectionInfo().Auth.Signature)
+		require.NotNil(t, msg.GetConnectionInfo().AuthInfo)
+		sig, _ := signer(msg.GetConnectionInfo().AuthInfo.SignedData)
+		require.Equal(t, sig, msg.GetConnectionInfo().AuthInfo.Signature)
 	}
 	comm, port := newCommInstance(t, mockSP)
 	defer comm.Stop()

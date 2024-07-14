@@ -254,8 +254,8 @@ func (c *commImpl) Handshake(peer *RemotePeer) (utils.PeerIdentityType, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(peer.PKIID, info.ID) {
-		return nil, errors.NewErrorf("remote peer claims to be a different peer, expected pki-id is %s, but got %s.", peer.PKIID.String(), hex.EncodeToString(info.ID))
+	if !bytes.Equal(peer.PKIID, info.PkiID) {
+		return nil, errors.NewErrorf("remote peer claims to be a different peer, expected pki-id is %s, but got %s.", peer.PKIID.String(), hex.EncodeToString(info.PkiID))
 	}
 	return info.Identity, nil
 }
@@ -381,7 +381,7 @@ func (c *commImpl) GossipStream(stream pgossip.Gossip_GossipStreamServer) error 
 	}
 	connInfo, err := c.authenticateRemotePeer(stream, false, false)
 	if err == errProbe {
-		c.logger.Infof("Peer %s@%s probed us.", connInfo.ID.String(), connInfo.Endpoint)
+		c.logger.Infof("Peer %s@%s probed us.", connInfo.PkiID.String(), connInfo.Endpoint)
 		return nil
 	}
 
@@ -390,7 +390,7 @@ func (c *commImpl) GossipStream(stream pgossip.Gossip_GossipStreamServer) error 
 		return err
 	}
 
-	c.logger.Debugf("Start servicing peer %s@%s.", connInfo.ID.String(), connInfo.Endpoint)
+	c.logger.Debugf("Start servicing peer %s@%s.", connInfo.PkiID.String(), connInfo.Endpoint)
 	conn := c.connStore.onConnected(stream, connInfo, c.metrics)
 	h := func(msg *utils.SignedGossipMessage) {
 		c.msgPublisher.DeMultiplex(&ReceivedMessageImpl{
@@ -399,9 +399,9 @@ func (c *commImpl) GossipStream(stream pgossip.Gossip_GossipStreamServer) error 
 			connInfo:            connInfo,
 		})
 	}
-	conn.handler = interceptAcks(h, connInfo.ID, c.pubsub)
+	conn.handler = interceptAcks(h, connInfo.PkiID, c.pubsub)
 	defer func() {
-		c.logger.Infof("Disconnect from client %s@%s.", connInfo.ID.String(), connInfo.Endpoint)
+		c.logger.Infof("Disconnect from client %s@%s.", connInfo.PkiID.String(), connInfo.Endpoint)
 		c.connStore.closeConnByPKIid(conn.pkiID)
 	}()
 
@@ -484,7 +484,7 @@ func (c *commImpl) createConnection(endpoint string, expectedPKIID utils.PKIidTy
 	if stream, err = client.GossipStream(ctx); err == nil {
 		connInfo, err = c.authenticateRemotePeer(stream, true, false)
 		if err == nil {
-			pkiID := connInfo.ID
+			pkiID := connInfo.PkiID
 			if len(expectedPKIID) != 0 && !bytes.Equal(expectedPKIID, pkiID) {
 				actualOrg := c.sa.OrgByPeerIdentity(connInfo.Identity)
 				expectedIdentity, _ := c.idMapper.Get(expectedPKIID)
@@ -581,10 +581,10 @@ func (c *commImpl) authenticateRemotePeer(stream stream, initiator, isProbe bool
 	}
 
 	connInfo := &utils.ConnectionInfo{
-		ID:       receivedMsg.PkiId,
+		PkiID:    receivedMsg.PkiId,
 		Identity: receivedMsg.Identity,
 		Endpoint: remoteAddress,
-		Auth: &utils.AuthInfo{
+		AuthInfo: &utils.AuthInfo{
 			SignedData: m.Payload,
 			Signature:  m.Signature,
 		},

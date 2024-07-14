@@ -219,21 +219,21 @@ func PayloadToString(p *pgossip.Payload) string {
 	if p == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("{Payload | SeqNum: %d; Data: %dbytes; PrivateData: %ditems}", p.SeqNum, len(p.Data), len(p.PrivateData))
+	return fmt.Sprintf("{Payload | SeqNum: %d; Data: %d byte(s); PrivateData: %d item(s)}", p.SeqNum, len(p.Data), len(p.PrivateData))
 }
 
 func DataUpdateToString(du *pgossip.DataUpdate) string {
 	if du == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("{DataUpdate | Nonce: %d; Data: %ditems; MsgType: %s}", du.Nonce, len(du.Data), pgossip.PullMsgType_name[int32(du.MsgType)])
+	return fmt.Sprintf("{DataUpdate | Nonce: %d; Data: %d item(s); MsgType: %s}", du.Nonce, len(du.Data), pgossip.PullMsgType_name[int32(du.MsgType)])
 }
 
 func StateInfoSnapshotToString(sis *pgossip.StateInfoSnapshot) string {
 	if sis == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("{StateInfoSnapshot | Elements: %ditems}", len(sis.Elements))
+	return fmt.Sprintf("{StateInfoSnapshot | Elements: %d item(s)}", len(sis.Elements))
 }
 
 // TODO 弄清楚 MembershipRequest.SelfInformation 到底是什么
@@ -266,7 +266,7 @@ func DataDigestToString(dd *pgossip.DataDigest) string {
 	}
 	digests := "["
 	for i, digest := range dd.Digests {
-		digests = digests + fmt.Sprintf("%d:%s", i, hex.EncodeToString(digest))
+		digests = digests + fmt.Sprintf("%d:%s", i, string(digest))
 		if i < len(dd.Digests)-1 {
 			digests = digests + ", "
 		}
@@ -281,7 +281,7 @@ func DataRequestToString(dr *pgossip.DataRequest) string {
 	}
 	digests := "["
 	for i, digest := range dr.Digests {
-		digests = digests + fmt.Sprintf("%d:%s", i, hex.EncodeToString(digest))
+		digests = digests + fmt.Sprintf("%d:%s", i, string(digest))
 		if i < len(dr.Digests)-1 {
 			digests = digests + ", "
 		}
@@ -358,7 +358,7 @@ func EnvelopeToString(envelope *pgossip.Envelope) string {
 	if envelope == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("{Envelope | Payload: %dbytes; Signature: %dbytes; SecretEnvelope: %s}",
+	return fmt.Sprintf("{Envelope | Payload: %d byte(s); Signature: %d byte(s); SecretEnvelope: %s}",
 		len(envelope.Payload), len(envelope.Signature), SecretEnvelopeToString(envelope.SecretEnvelope))
 }
 
@@ -366,7 +366,7 @@ func SecretEnvelopeToString(se *pgossip.SecretEnvelope) string {
 	if se == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("{SecretEnvelope | Payload: %dbytes; Signature: %dbytes}", len(se.Payload), len(se.Signature))
+	return fmt.Sprintf("{SecretEnvelope | Payload: %d byte(s); Signature: %d byte(s)}", len(se.Payload), len(se.Signature))
 }
 
 func PeerTimeToString(pt *pgossip.PeerTime) string {
