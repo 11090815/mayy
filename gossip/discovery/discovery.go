@@ -193,17 +193,17 @@ func (da *discoveryAdapter) SendToPeer(peer *utils.NetworkMember, msg *utils.Sig
 		if msg, err = utils.NoopSign(msgClone); err != nil {
 			return
 		}
-		da.c.Send(msg, &comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
+		da.c.Send(msg, &utils.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
 		return
 	}
-	da.c.Send(msg, &comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
+	da.c.Send(msg, &utils.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
 }
 
 func (da *discoveryAdapter) Ping(peer *utils.NetworkMember) bool {
 	if da.closed() {
 		return false
 	}
-	return da.c.Probe(&comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()}) == nil
+	return da.c.Probe(&utils.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()}) == nil
 }
 
 func (da *discoveryAdapter) Accept() <-chan utils.ReceivedMessage {
@@ -219,7 +219,7 @@ func (da *discoveryAdapter) PresumedDead() <-chan utils.PKIidType {
 }
 
 func (da *discoveryAdapter) CloseConn(peer *utils.NetworkMember) {
-	da.c.CloseConn(&comm.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
+	da.c.CloseConn(&utils.RemotePeer{PKIID: peer.PKIid, Endpoint: peer.PreferredEndpoint()})
 }
 
 func (da *discoveryAdapter) Forward(msg utils.ReceivedMessage) {

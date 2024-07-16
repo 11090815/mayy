@@ -8,12 +8,12 @@ import (
 )
 
 type NetworkMember struct {
-	Endpoint         string
-	InternalEndpoint string
-	Metadata         []byte
-	PKIid            PKIidType
-	Properties       *pgossip.Properties
-	*pgossip.Envelope
+	Endpoint          string
+	InternalEndpoint  string
+	Metadata          []byte
+	PKIid             PKIidType
+	Properties        *pgossip.Properties
+	*pgossip.Envelope // 存储着 StateInfo 信息
 }
 
 func (nm NetworkMember) Clone() NetworkMember {
@@ -95,4 +95,15 @@ func (members Members) Map(f func(NetworkMember) NetworkMember) Members {
 		res = append(res, f(peer))
 	}
 	return res
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type RemotePeer struct {
+	Endpoint string
+	PKIID    PKIidType
+}
+
+func (rp *RemotePeer) String() string {
+	return fmt.Sprintf("{RemotePeer | Endpoint: %s; PKI-ID: %s}", rp.Endpoint, rp.PKIID.String())
 }

@@ -2,15 +2,55 @@ package utils
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"time"
 
 	"github.com/11090815/mayy/protobuf/pcommon"
+	"github.com/11090815/mayy/protobuf/pmsp"
+	"google.golang.org/protobuf/proto"
 )
 
 // PeerIdentityType 存储了 peer 节点的证书信息。
 type PeerIdentityType []byte
+
+func (pit PeerIdentityType) String() string {
+	base64Representation := base64.StdEncoding.EncodeToString(pit)
+	sID := &pmsp.SerializedIdentity{}
+	err := proto.Unmarshal(pit, sID)
+	if err != nil {
+		return fmt.Sprintf("non SerializedIdentity: %s", base64Representation)
+	}
+	block, _ := pem.Decode(sID.IdBytes)
+	if block == nil {
+		return fmt.Sprintf("non PEM encoded identity: %s", base64Representation)
+	}
+
+	cert, _ := x509.ParseCertificate(block.Bytes)
+	if cert == nil {
+		return fmt.Sprintf("non x509 identity: %s", base64Representation)
+	}
+
+	m := make(map[string]any)
+	m["MSP"] = sID.Mspid
+	s := cert.Subject
+	m["CN"] = s.CommonName
+	m["OU"] = s.OrganizationalUnit
+	m["C-L-S"] = fmt.Sprintf("%s-%s-%s", s.Country, s.Locality, s.StreetAddress)
+	i := cert.Issuer
+	m["Issuer-CN"] = i.CommonName
+	m["Issuer-OU"] = i.OrganizationalUnit
+	m["Issuer-C-L-S"] = fmt.Sprintf("%s-%s-%s", i.Country, i.Locality, i.StreetAddress)
+	rawJSON, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Sprintf("failed marshaling certificate based on JSON: %s", base64Representation)
+	}
+	return string(rawJSON)
+}
 
 // PKIidType 用于标识 peer 节点的身份标识符。
 type PKIidType []byte

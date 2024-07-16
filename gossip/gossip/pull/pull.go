@@ -6,7 +6,6 @@ import (
 
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/gossip/algo"
-	"github.com/11090815/mayy/gossip/gossip/comm"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 )
@@ -50,7 +49,7 @@ type IdentitfierExtractor func(*utils.SignedGossipMessage) string
 /* ------------------------------------------------------------------------------------------ */
 
 type Sender interface {
-	Send(msg *utils.SignedGossipMessage, peers ...*comm.RemotePeer)
+	Send(msg *utils.SignedGossipMessage, peers ...*utils.RemotePeer)
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -306,12 +305,12 @@ func (pm *pullMediator) SendRes(items []string, nonce uint64, context any) {
 	context.(utils.ReceivedMessage).Respond(dataUpdate)
 }
 
-func (pm *pullMediator) peersWithEndpoints(endpoints ...string) []*comm.RemotePeer {
-	peers := []*comm.RemotePeer{}
+func (pm *pullMediator) peersWithEndpoints(endpoints ...string) []*utils.RemotePeer {
+	peers := []*utils.RemotePeer{}
 	for _, member := range pm.MembershipService.GetMembership() {
 		for _, endpoint := range endpoints {
 			if member.PreferredEndpoint() == endpoint {
-				peers = append(peers, &comm.RemotePeer{PKIID: member.PKIid, Endpoint: endpoint})
+				peers = append(peers, &utils.RemotePeer{PKIID: member.PKIid, Endpoint: endpoint})
 			}
 		}
 	}
@@ -333,15 +332,15 @@ func (pm *pullMediator) hooksByMsgType(msgType MsgType) []MessageHook {
 	return pm.msgType2Hooks[msgType]
 }
 
-func SelectEndpoints(k int, peerPool []utils.NetworkMember) []*comm.RemotePeer {
+func SelectEndpoints(k int, peerPool []utils.NetworkMember) []*utils.RemotePeer {
 	if len(peerPool) < k {
 		k = len(peerPool)
 	}
 
 	indices := utils.GetRandomIndices(k, len(peerPool)-1)
-	endpoints := make([]*comm.RemotePeer, len(indices))
+	endpoints := make([]*utils.RemotePeer, len(indices))
 	for i, index := range indices {
-		endpoints[i] = &comm.RemotePeer{Endpoint: peerPool[index].PreferredEndpoint(), PKIID: peerPool[index].PKIid}
+		endpoints[i] = &utils.RemotePeer{Endpoint: peerPool[index].PreferredEndpoint(), PKIID: peerPool[index].PKIid}
 	}
 	return endpoints
 }

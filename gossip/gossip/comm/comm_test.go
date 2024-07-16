@@ -263,9 +263,9 @@ func createGossipMsg() *utils.SignedGossipMessage {
 	return msg
 }
 
-func remotePeer(port int) *RemotePeer {
+func remotePeer(port int) *utils.RemotePeer {
 	endpoint := fmt.Sprintf("127.0.0.1:%d", port)
-	return &RemotePeer{Endpoint: endpoint, PKIID: utils.PKIidType(endpoint)}
+	return &utils.RemotePeer{Endpoint: endpoint, PKIID: utils.PKIidType(endpoint)}
 }
 
 func getAvailablePort(t *testing.T) (int, string, net.Listener) {
@@ -547,7 +547,7 @@ func TestCloseConn(t *testing.T) {
 	case <-time.After(time.Second):
 		require.Fail(t, "Didn't receive a message within a timely manner")
 	}
-	comm1.CloseConn(&RemotePeer{PKIID: utils.PKIidType("id")})
+	comm1.CloseConn(&utils.RemotePeer{PKIID: utils.PKIidType("id")})
 	time.Sleep(time.Second * 1)
 	gotErr := false
 	msg2Send := createGossipMsg()
@@ -566,7 +566,7 @@ func TestCloseConn(t *testing.T) {
 }
 
 func TestCommSend(t *testing.T) {
-	sendMessages := func(c Comm, peer *RemotePeer, stopCh <-chan struct{}) {
+	sendMessages := func(c Comm, peer *utils.RemotePeer, stopCh <-chan struct{}) {
 		ticker := time.NewTicker(time.Millisecond)
 		defer ticker.Stop()
 		for {

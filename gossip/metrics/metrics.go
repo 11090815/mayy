@@ -3,14 +3,16 @@ package metrics
 import "github.com/11090815/mayy/common/metrics"
 
 type GossipMetrics struct {
-	CommMetrics     *CommMetrics
-	ElectionMetrics *ElectionMetrics
+	CommMetrics       *CommMetrics
+	ElectionMetrics   *ElectionMetrics
+	MembershipMetrics *MembershipMetrics
 }
 
 func NewGossipMetrics(p metrics.Provider) *GossipMetrics {
 	return &GossipMetrics{
-		CommMetrics:     newCommMetrics(p),
-		ElectionMetrics: newElectionMetrics(p),
+		CommMetrics:       newCommMetrics(p),
+		ElectionMetrics:   newElectionMetrics(p),
+		MembershipMetrics: newMembershipMetrics(p),
 	}
 }
 
@@ -101,3 +103,22 @@ var (
 		StatsdFormat: "%{#fqname}.%{channel}",
 	}
 )
+
+type MembershipMetrics struct {
+	Total metrics.Gauge
+}
+
+var TotalOpts = metrics.GaugeOpts{
+	Namespace:    "gossip",
+	Subsystem:    "membership",
+	Name:         "total_peers_known",
+	Help:         "Total known peers",
+	LabelNames:   []string{"channel"},
+	StatsdFormat: "%{#fqname}.%{channel}",
+}
+
+func newMembershipMetrics(p metrics.Provider) *MembershipMetrics {
+	return &MembershipMetrics{
+		Total: p.NewGauge(TotalOpts),
+	}
+}

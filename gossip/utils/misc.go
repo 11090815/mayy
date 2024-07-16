@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"reflect"
 
+	"github.com/11090815/mayy/csp/factory"
+	"github.com/11090815/mayy/csp/softimpl/hash"
 	"google.golang.org/grpc"
 )
 
@@ -61,6 +63,21 @@ type Equals func(a, b any) bool
 
 /* ------------------------------------------------------------------------------------------ */
 
+type JoinChannelMessage interface {
+	SequenceNumber() uint64
+	Orgs() []OrgIdentityType
+	AnchorPeersOf(OrgIdentityType) []AnchorPeer
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type AnchorPeer struct {
+	Host string
+	Port int
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
 // IndexInSlice 给定一个数组 array 和一个可能存在于 array 中的一个元素 o，
 // 返回 o 在 array 中的索引位置。
 func IndexInSlice(array any, o any, equals Equals) int {
@@ -104,4 +121,19 @@ func StringsToBytes(strs []string) [][]byte {
 		bzs[i] = []byte(str)
 	}
 	return bzs
+}
+
+func GenerateMAC(pkiID PKIidType, channelID ChannelID) []byte {
+	var bz []byte
+	bz = append(bz, pkiID...)
+	bz = append(bz, channelID...)
+	csp, err := factory.GetCSP()
+	if err != nil {
+		panic(err)
+	}
+	hash, err := csp.Hash(bz, &hash.SHA256Opts{})
+	if err != nil {
+		panic(err)
+	}
+	return hash
 }

@@ -48,7 +48,7 @@ func newConnStore(connFactory connFactory, logger mlog.Logger, config ConnConfig
 	}
 }
 
-func (cs *connStore) getConnection(peer *RemotePeer) (*connection, error) {
+func (cs *connStore) getConnection(peer *utils.RemotePeer) (*connection, error) {
 	if cs.isClosed() {
 		return nil, errors.NewError("conn store is closed")
 	}

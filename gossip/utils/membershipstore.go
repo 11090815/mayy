@@ -4,6 +4,7 @@ import (
 	"sync"
 )
 
+// MembershipStore 存储的数据结构：pkiID => *SignedGossipMessage。
 type MembershipStore struct {
 	m     map[string]*SignedGossipMessage // pki-id => SignedGossipMessage
 	mutex *sync.RWMutex

@@ -7,8 +7,8 @@ import (
 )
 
 type (
-	sendFunc func(peer *RemotePeer, msg *utils.SignedGossipMessage)
-	waitFunc func(*RemotePeer) error
+	sendFunc func(peer *utils.RemotePeer, msg *utils.SignedGossipMessage)
+	waitFunc func(*utils.RemotePeer) error
 )
 
 type ackSendOperation struct {
@@ -23,14 +23,14 @@ func newAckSendOperation(snd sendFunc, waitForAck waitFunc) *ackSendOperation {
 	}
 }
 
-func (aso *ackSendOperation) send(msg *utils.SignedGossipMessage, minAckNum int, peers ...*RemotePeer) []SendResult {
+func (aso *ackSendOperation) send(msg *utils.SignedGossipMessage, minAckNum int, peers ...*utils.RemotePeer) []SendResult {
 	successAcks := 0
 	results := []SendResult{}
 
 	acks := make(chan SendResult, len(peers))
 
 	for _, p := range peers {
-		go func(p *RemotePeer) {
+		go func(p *utils.RemotePeer) {
 			aso.snd(p, msg)
 			err := aso.waitForAck(p)
 			res := ""

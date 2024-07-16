@@ -13,7 +13,7 @@ func TestSelectPolicies(t *testing.T) {
 
 func TestCombineRoutingFilters(t *testing.T) {
 	nm := NetworkMember{
-		Endpoint: "a",
+		Endpoint:         "a",
 		InternalEndpoint: "b",
 	}
 	var a RoutingFilter = func(nm NetworkMember) bool {
@@ -29,9 +29,9 @@ func TestCombineRoutingFilters(t *testing.T) {
 }
 
 func TestAnyMatch(t *testing.T) {
-	p1 := NetworkMember{Endpoint: "a"}	
-	p2 := NetworkMember{Endpoint: "b"}	
-	p3 := NetworkMember{Endpoint: "c"}	
+	p1 := NetworkMember{Endpoint: "a"}
+	p2 := NetworkMember{Endpoint: "b"}
+	p3 := NetworkMember{Endpoint: "c"}
 	p4 := NetworkMember{Endpoint: "d"}
 
 	peers := []NetworkMember{p1, p2, p3, p4}
@@ -77,17 +77,17 @@ func TestSelectPeers(t *testing.T) {
 	var pC RoutingFilter = func(nm NetworkMember) bool {
 		return len(nm.PKIid) == 0
 	}
-	
-	p1 := NetworkMember{Endpoint: "a", InternalEndpoint: "1"}	
-	p2 := NetworkMember{Endpoint: "b", InternalEndpoint: "2"}	
+
+	p1 := NetworkMember{Endpoint: "a", InternalEndpoint: "1"}
+	p2 := NetworkMember{Endpoint: "b", InternalEndpoint: "2"}
 	p3 := NetworkMember{Endpoint: "c", InternalEndpoint: "1"}
 	peers := []NetworkMember{p1, p2, p3}
 
-	require.Len(t, SelectPeers(3, peers, pA), 1)
-	require.Len(t, SelectPeers(3, peers, pB), 2)
+	require.Len(t, SelectMembers(3, peers, pA), 1)
+	require.Len(t, SelectMembers(3, peers, pB), 2)
 
-	require.Len(t, SelectPeers(3, peers, CombineRoutingFilters(pA, pB)), 0)
-	require.Len(t, SelectPeers(1, peers, pC), 1)
-	require.Len(t, SelectPeers(2, peers, pC), 2)
-	require.Len(t, SelectPeers(3, peers, pC), 3)
+	require.Len(t, SelectMembers(3, peers, CombineRoutingFilters(pA, pB)), 0)
+	require.Len(t, SelectMembers(1, peers, pC), 1)
+	require.Len(t, SelectMembers(2, peers, pC), 2)
+	require.Len(t, SelectMembers(3, peers, pC), 3)
 }

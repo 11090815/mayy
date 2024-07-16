@@ -11,7 +11,6 @@ import (
 
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/gossip/algo"
-	"github.com/11090815/mayy/gossip/gossip/comm"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
 	"github.com/stretchr/testify/require"
@@ -65,7 +64,7 @@ type pullInstance struct {
 	config        PullConfig
 }
 
-func (p *pullInstance) Send(msg *utils.SignedGossipMessage, peers ...*comm.RemotePeer) {
+func (p *pullInstance) Send(msg *utils.SignedGossipMessage, peers ...*utils.RemotePeer) {
 	for _, peer := range peers {
 		m := &pullMsg{
 			msg:         msg,
@@ -354,7 +353,7 @@ func TestHandleMessage(t *testing.T) {
 
 	sgm, _ = utils.NoopSign(reqMsg("1", "2", "3"))
 	inst2.mediator.HandleMessage(inst1.wrapPullMsg(sgm))
-	waitUntilOrFail(t, func() bool {return atomic.LoadInt32(&inst1ReceivedResponse) == 1})
+	waitUntilOrFail(t, func() bool { return atomic.LoadInt32(&inst1ReceivedResponse) == 1 })
 
 	require.True(t, inst1.items.Exists(uint64(1)))
 	require.True(t, inst1.items.Exists(uint64(2)))

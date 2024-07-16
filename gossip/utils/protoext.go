@@ -401,3 +401,7 @@ func GetPullMsgType(m *pgossip.GossipMessage) pgossip.PullMsgType {
 
 	return pgossip.PullMsgType_UNDEFINED
 }
+
+func IsChannelRestricted(m *pgossip.GossipMessage) bool {
+	return m.Tag == pgossip.GossipMessage_CHAN_AND_ORG || m.Tag == pgossip.GossipMessage_CHAN_ONLY || m.Tag == pgossip.GossipMessage_CHAN_OR_ORG
+}

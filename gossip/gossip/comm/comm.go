@@ -38,16 +38,16 @@ type Comm interface {
 	// GetPKIid 返回创建此 Comm 的节点的 ID。
 	GetPKIid() utils.PKIidType
 
-	Send(msg *utils.SignedGossipMessage, peers ...*RemotePeer)
+	Send(msg *utils.SignedGossipMessage, peers ...*utils.RemotePeer)
 
 	// SendWithAck 发送消息给一群 peer 节点，并等待从这些节点处收回至少 minAck 个反馈，或者直到 timeout 超时时间超时。
-	SendWithAck(msg *utils.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*RemotePeer) AggregatedSendResult
+	SendWithAck(msg *utils.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*utils.RemotePeer) AggregatedSendResult
 
 	// Probe 给一个 peer 节点发送一条消息，如果对方回应了则返回 nil，否则返回 error。
-	Probe(peer *RemotePeer) error
+	Probe(peer *utils.RemotePeer) error
 
 	// Handshake 与一个 peer 节点进行握手，如果握手成功，则返回此 peer 节点的身份证书信息，否则返回 nil 和 error。
-	Handshake(peer *RemotePeer) (utils.PeerIdentityType, error)
+	Handshake(peer *utils.RemotePeer) (utils.PeerIdentityType, error)
 
 	// Accept 接收 Comm 的创建者感兴趣的消息，并将这些消息放于一个 read-only 通道中，然后返回此通道。
 	Accept(utils.MessageAcceptor) <-chan utils.ReceivedMessage
@@ -59,7 +59,7 @@ type Comm interface {
 	IdentitySwitch() <-chan utils.PKIidType
 
 	// CloseConn 关闭与某个特定 peer 节点之间的网络连接。
-	CloseConn(peer *RemotePeer)
+	CloseConn(peer *utils.RemotePeer)
 
 	Stop()
 }
@@ -73,20 +73,13 @@ type CommConfig struct {
 
 /* ------------------------------------------------------------------------------------------ */
 
-type RemotePeer struct {
-	Endpoint string
-	PKIID    utils.PKIidType
-}
 
-func (rp *RemotePeer) String() string {
-	return fmt.Sprintf("{RemotePeer | Endpoint: %s; PKI-ID: %s}", rp.Endpoint, rp.PKIID.String())
-}
 
 /* ------------------------------------------------------------------------------------------ */
 
 type SendResult struct {
 	result string
-	RemotePeer
+	utils.RemotePeer
 }
 
 func (sr SendResult) Error() string {
@@ -206,7 +199,7 @@ func NewCommInstance(s *grpc.Server, certs *utils.TLSCertificates, idStore utils
 	return inst, nil
 }
 
-func (c *commImpl) Probe(peer *RemotePeer) error {
+func (c *commImpl) Probe(peer *utils.RemotePeer) error {
 	c.logger.Debugf("Probing peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
 	if c.isStopping() {
 		return errors.NewError("comm instance is already closed")
@@ -229,7 +222,7 @@ func (c *commImpl) Probe(peer *RemotePeer) error {
 	return err
 }
 
-func (c *commImpl) Handshake(peer *RemotePeer) (utils.PeerIdentityType, error) {
+func (c *commImpl) Handshake(peer *utils.RemotePeer) (utils.PeerIdentityType, error) {
 	c.logger.Debugf("Trying to handshake with peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
 	var dialOpts []grpc.DialOption
 	dialOpts = append(dialOpts, c.secureDialOpts()...)
@@ -260,19 +253,19 @@ func (c *commImpl) Handshake(peer *RemotePeer) (utils.PeerIdentityType, error) {
 	return info.Identity, nil
 }
 
-func (c *commImpl) Send(msg *utils.SignedGossipMessage, peers ...*RemotePeer) {
+func (c *commImpl) Send(msg *utils.SignedGossipMessage, peers ...*utils.RemotePeer) {
 	if c.isStopping() || len(peers) == 0 {
 		return
 	}
 	for _, peer := range peers {
-		go func(peer *RemotePeer, msg *utils.SignedGossipMessage) {
+		go func(peer *utils.RemotePeer, msg *utils.SignedGossipMessage) {
 			c.sendToEndpoint(peer, msg, nonBlockingSend)
 			c.logger.Debugf("Send message %s to peer %s@%s.", msg.String(), peer.PKIID.String(), peer.Endpoint)
 		}(peer, msg)
 	}
 }
 
-func (c *commImpl) SendWithAck(msg *utils.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*RemotePeer) AggregatedSendResult {
+func (c *commImpl) SendWithAck(msg *utils.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*utils.RemotePeer) AggregatedSendResult {
 	if len(peers) == 0 {
 		return nil
 	}
@@ -288,7 +281,7 @@ func (c *commImpl) SendWithAck(msg *utils.SignedGossipMessage, timeout time.Dura
 		}
 		results := []SendResult{}
 		for _, peer := range peers {
-			results = append(results, SendResult{result: err.Error(), RemotePeer: RemotePeer{Endpoint: peer.Endpoint, PKIID: peer.PKIID}})
+			results = append(results, SendResult{result: err.Error(), RemotePeer: utils.RemotePeer{Endpoint: peer.Endpoint, PKIID: peer.PKIID}})
 		}
 		return results
 	}
@@ -313,10 +306,10 @@ func (c *commImpl) SendWithAck(msg *utils.SignedGossipMessage, timeout time.Dura
 		}
 	}
 
-	waitForAck := func(peer *RemotePeer) error {
+	waitForAck := func(peer *utils.RemotePeer) error {
 		return subscriptions[peer.PKIID.String()]()
 	}
-	send := func(peer *RemotePeer, msg *utils.SignedGossipMessage) {
+	send := func(peer *utils.RemotePeer, msg *utils.SignedGossipMessage) {
 		c.sendToEndpoint(peer, msg, blockingSend)
 	}
 	ackOperation := newAckSendOperation(send, waitForAck)
@@ -365,7 +358,7 @@ func (c *commImpl) IdentitySwitch() <-chan utils.PKIidType {
 	return c.identityChanges
 }
 
-func (c *commImpl) CloseConn(peer *RemotePeer) {
+func (c *commImpl) CloseConn(peer *utils.RemotePeer) {
 	c.disconnect(peer.PKIID)
 }
 
@@ -428,7 +421,7 @@ func (c *commImpl) Stop() {
 
 /* ------------------------------------------------------------------------------------------ */
 
-func (c *commImpl) sendToEndpoint(peer *RemotePeer, msg *utils.SignedGossipMessage, shouldBlock blockingBehavior) {
+func (c *commImpl) sendToEndpoint(peer *utils.RemotePeer, msg *utils.SignedGossipMessage, shouldBlock blockingBehavior) {
 	if c.isStopping() || c.connStore.isClosed() {
 		return
 	}
