@@ -62,7 +62,6 @@ type MembershipService interface {
 /* ------------------------------------------------------------------------------------------ */
 
 type PullConfig struct {
-	ID                string
 	PullInterval      time.Duration
 	Channel           utils.ChannelID
 	PeerCountToSelect int // 初始化时向这么多个节点发送 pull 消息。

@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/utils"
+	"github.com/11090815/mayy/protobuf/pcommon"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
@@ -131,4 +134,25 @@ func TestCloseChannel(t *testing.T) {
 		<-ch
 		t.Log("hello", i)
 	}
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type cryptoService struct {
+	mock.Mock
+}
+
+func (cs *cryptoService) VerifyBlock(channelID utils.ChannelID, seqNum uint64, block *pcommon.Block) error {
+	args := cs.Called(block)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(error)
+}
+
+func TestMock(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", &pcommon.Block{}).Return(errors.NewError("hello"))
+	err := cs.VerifyBlock(nil, 10, &pcommon.Block{})
+	t.Log(err)
 }

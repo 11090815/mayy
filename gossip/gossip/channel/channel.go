@@ -3,6 +3,7 @@ package channel
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -19,23 +20,33 @@ import (
 	"github.com/11090815/mayy/protoutil"
 )
 
-const DefaultMsgExpirationTimeout = election.DefLeaderAliveThreshold * 10
+const DefaultLeadershipMsgExpirationTimeout = election.DefLeaderAliveThreshold * 10
 
 type Config struct {
-	ID                       string
-	PublishStateInfoInterval time.Duration
-	MaxBlockCountToStore     int
+	// MaxBlockCountToStore 内存缓冲区中能允许存储的区块数量。
+	MaxBlockCountToStore int
 	// PullPeerNum 向 PullPeerNum 个节点发送请求状态信息的请求。
-	PullPeerNum                 int
-	PullInterval                time.Duration
-	RequestStateInfoInterval    time.Duration
-	BlockExpirationInterval     time.Duration
+	PullPeerNum int
+	// PullInterval 每隔 PullInterval 这段时间就给其他节点发送 Hello 消息，抓取其他节点的 digests。
+	PullInterval time.Duration
+	// PublishStateInfoInterval 每隔这段时间就给其他节点广播自己的状态信息。
+	PublishStateInfoInterval time.Duration
+	// RequestStateInfoInterval 每隔这段时间就向其他 PullPeerNum 个节点请求状态信息。
+	RequestStateInfoInterval time.Duration
+	// BlockExpirationInterval 是区块在内存存储区内的保质期，超过这个保质期，区块就过期了。
+	BlockExpirationInterval time.Duration
+	// StateInfoCacheSweepInterval 每隔这段时间，就清除掉存储在本地的那些无法确认消息创造者身份的状态消息。
 	StateInfoCacheSweepInterval time.Duration
-	TimeForMembershipTracker    time.Duration
-	DigestWaitTime              time.Duration
-	RequestWaitTime             time.Duration
-	ResponseWaitTime            time.Duration
-	MsgExpirationTimeout        time.Duration
+	// TimeForMembershipTracker 每隔这段时间，就汇报一下当前 view 下 membership 的变化情况。
+	TimeForMembershipTracker time.Duration
+	// DigestWaitTime 给所有 peer 节点发送过 hello 消息后，默认等待 DigestWaitTime 这段时间，就去处理其他 peer 节点返回来的 digests。
+	DigestWaitTime time.Duration
+	// RequestWaitTime 给其他节点发送过 digests 消息后，会等待 RequestWaitTime 时间，在此时间内，接收其他节点的 request 消息，超过此时间后，就不再接收 request 消息。
+	RequestWaitTime time.Duration
+	// ResponseWaitTime 发送完 request 消息后，等待 ResponseWaitTime 时间，在此时间内，接收其他节点发送来的 response 消息，超过此时间，则忽略后面到来的 response 消息。
+	ResponseWaitTime time.Duration
+	// LeadershipMsgExpirationTimeout 是 leadership 消息在内存存储区内的保质期，超过这个保质期，leadership 消息就过期了。
+	LeadershipMsgExpirationTimeout time.Duration
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -55,6 +66,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 		orgs:                      make([]utils.OrgIdentityType, 0),
 		channelID:                 channelID,
 		logger:                    logger,
+		mutex:                     &sync.RWMutex{},
 	}
 
 	comparator := utils.NewGossipMessageComparator(adapter.GetConf().MaxBlockCountToStore)
@@ -70,6 +82,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 		gc.blocksPuller.Remove(seqNumFromMsg(a))
 	})
 
+	// hashPeerExpiredInMembership 如果在本地找不到消息创造者的证书，就返回 true。
 	hashPeerExpiredInMembership := func(a any) bool {
 		pid := a.(*utils.SignedGossipMessage).GetStateInfo().PkiId
 		return gc.Lookup(pid) == nil
@@ -79,6 +92,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 		stateInfo := msg.GetStateInfo()
 		pid := utils.PKIidType(stateInfo.PkiId)
 		if bytes.Equal(gc.pkiID, pid) {
+			// 自己的状态信息消息不需要验证
 			return true
 		}
 
@@ -109,6 +123,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 
 		o := gc.GetOrgOfPeer(pid)
 		if !isOrgInChannel(o) {
+			// 状态信息消息的发送者所在的机构不在本通道内，那么此状态信息消息是无效的。
 			gc.logger.Warnf("Peer's organization (%s) is not in the channel.", o.String())
 			return false
 		}
@@ -124,7 +139,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 	gc.updateProperties(1, nil, false)
 	gc.setupSignedStateInfoMessage()
 
-	ttl := adapter.GetConf().MsgExpirationTimeout
+	ttl := adapter.GetConf().LeadershipMsgExpirationTimeout
 	policy := utils.NewGossipMessageComparator(0)
 
 	gc.leaderMsgStore = msgstore.NewMessageStoreExpirable(policy, msgstore.Noop, ttl, nil, nil, nil)
@@ -134,7 +149,16 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 	go gc.periodicalInvocation(gc.requestStateInfo, gc.stateInfoRequestScheduler.C)
 
 	ticker := time.NewTicker(gc.GetConf().TimeForMembershipTracker)
-	
+	gc.membershipTracker = &membershipTracker{
+		getPeersToTrack: gc.GetPeers,
+		report:          gc.logger.Infof,
+		stopChan:        make(chan struct{}),
+		tickerC:         ticker.C,
+		metrics:         metrics,
+		channelID:       channelID,
+	}
+	go gc.membershipTracker.trackMembershipChanges()
+
 	return gc
 }
 
@@ -180,7 +204,7 @@ type GossipChannel interface {
 
 func (gc *gossipChannel) Self() *utils.SignedGossipMessage {
 	gc.mutex.RLock()
-	gc.mutex.RUnlock()
+	defer gc.mutex.RUnlock()
 	return gc.selfStateInfoSignedMsg
 }
 
@@ -482,6 +506,17 @@ func (gc *gossipChannel) LeaveChannel() {
 	atomic.StoreInt32(&gc.shouldGossipStateInfo, 1)
 }
 
+func (gc *gossipChannel) Stop() {
+	close(gc.stopCh)
+	close(gc.membershipTracker.stopChan)
+	gc.blocksPuller.Stop()
+	gc.stateInfoPublishScheduler.Stop()
+	gc.stateInfoRequestScheduler.Stop()
+	gc.leaderMsgStore.Stop()
+	gc.stateInfoMsgStore.Stop()
+	gc.blockMsgStore.Stop()
+}
+
 /* ------------------------------------------------------------------------------------------ */
 
 type Adapter interface {
@@ -521,24 +556,27 @@ type gossipChannel struct {
 	selfStateInfoMsg       *pgossip.GossipMessage
 	selfStateInfoSignedMsg *utils.SignedGossipMessage
 	ledgerHeight           uint64
-	stateInfoMsgStore      *stateInfoCache
 	incTime                uint64
 	pkiID                  utils.PKIidType
 	leftChannel            int32
 	stopCh                 chan struct{}
+	shouldGossipStateInfo  int32 // 每次更新完状态后，此标志为就会被置为 1，每广播过一次状态信息，此标志为就会被置为 0。
 
-	channelID             utils.ChannelID
-	shouldGossipStateInfo int32
-	logger                mlog.Logger
-	mcs                   utils.MessageCryptoService
-	orgs                  []utils.OrgIdentityType
-	blockMsgStore         msgstore.MessageStore
-	blocksPuller          pull.PullMediator
-	leaderMsgStore        msgstore.MessageStore
-	joinMsg               utils.JoinChannelMessage
+	stateInfoMsgStore *stateInfoCache
+	leaderMsgStore    msgstore.MessageStore
+	blockMsgStore     msgstore.MessageStore
+
+	channelID    utils.ChannelID
+	logger       mlog.Logger
+	mcs          utils.MessageCryptoService
+	orgs         []utils.OrgIdentityType
+	blocksPuller pull.PullMediator
+	joinMsg      utils.JoinChannelMessage
 
 	stateInfoPublishScheduler *time.Ticker
 	stateInfoRequestScheduler *time.Ticker
+
+	membershipTracker *membershipTracker
 
 	mutex *sync.RWMutex
 }
@@ -571,6 +609,7 @@ func (gc *gossipChannel) hasLeftChannel() bool {
 	return atomic.LoadInt32(&gc.leftChannel) == int32(1)
 }
 
+// updateProperties 更新一下本地账本高度，然后更新一下自己的状态信息：selfStateInfoMsg。
 func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*pgossip.Chaincode, leftChannel bool) {
 	stateInfoMsg := &pgossip.StateInfo{
 		Channel_MAC: utils.GenerateMAC(gc.pkiID, gc.channelID),
@@ -593,11 +632,6 @@ func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*pgo
 	}
 	gc.ledgerHeight = ledgerHeight
 	gc.selfStateInfoMsg = m
-}
-
-func (gc *gossipChannel) updateStateInfo(msg *pgossip.GossipMessage) {
-	gc.ledgerHeight = msg.GetStateInfo().Properties.LedgerHeight
-	gc.selfStateInfoMsg = msg
 }
 
 func (gc *gossipChannel) createStateInfoRequest() (*utils.SignedGossipMessage, error) {
@@ -654,7 +688,6 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 	config := pull.PullConfig{
 		MsgType:           pgossip.PullMsgType_BLOCK_MSG,
 		Channel:           gc.channelID,
-		ID:                gc.GetConf().ID,
 		PeerCountToSelect: gc.GetConf().PullPeerNum,
 		PullInterval:      gc.GetConf().PullInterval,
 		Tag:               pgossip.GossipMessage_CHAN_AND_ORG,
@@ -665,7 +698,7 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 		},
 	}
 
-	seqNumFromMsg := func(sgm *utils.SignedGossipMessage) string {
+	identifierExtractor := func(sgm *utils.SignedGossipMessage) string {
 		dataMsg := sgm.GetDataMsg()
 		if dataMsg == nil || dataMsg.Payload == nil {
 			gc.logger.Warn("Non-data block or with empty payload.")
@@ -677,7 +710,7 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 	adapter := &pull.PullAdapter{
 		Sender:               gc,
 		MembershipService:    gc,
-		IdentitfierExtractor: seqNumFromMsg,
+		IdentitfierExtractor: identifierExtractor,
 		MsgConsumer: func(message *utils.SignedGossipMessage) {
 			gc.DeMultiplex(message)
 		},
@@ -718,8 +751,9 @@ func (gc *gossipChannel) verifyMsg(msg utils.ReceivedMessage) bool {
 		return false
 	}
 
+	// 这里的验证顺序与 fabric 不同，导致传递的状态信息消息，必须附带 channel-id。
 	if !bytes.Equal(sgm.Channel, gc.channelID) {
-		gc.logger.Warn("The received message comes from the different channel %x.", sgm.Channel)
+		gc.logger.Warnf("The received message comes from the different channel %x.", sgm.Channel)
 		return false
 	}
 
@@ -788,19 +822,19 @@ func (gc *gossipChannel) periodicalInvocation(fn func(), c <-chan time.Time) {
 
 func (gc *gossipChannel) setupSignedStateInfoMessage() (*utils.SignedGossipMessage, error) {
 	gc.mutex.RLock()
-	msg := gc.selfStateInfoMsg
+	stateInfoMsg := gc.selfStateInfoMsg
 	gc.mutex.RUnlock()
 
-	stateInfoMsg, err := gc.Sign(msg)
+	signedStateInfoMsg, err := gc.Sign(stateInfoMsg)
 	if err != nil {
 		gc.logger.Errorf("Failed signing state info message: %s.", err.Error())
 		return nil, err
 	}
 	gc.mutex.Lock()
-	gc.selfStateInfoSignedMsg = stateInfoMsg
+	gc.selfStateInfoSignedMsg = signedStateInfoMsg
 	gc.mutex.Unlock()
 
-	return stateInfoMsg, nil
+	return signedStateInfoMsg, nil
 }
 
 func (gc *gossipChannel) requestStateInfo() {
@@ -818,6 +852,7 @@ func (gc *gossipChannel) publishStateInfo() {
 	if atomic.LoadInt32(&gc.shouldGossipStateInfo) == int32(0) {
 		return
 	}
+
 	if len(gc.GetMembership()) == 0 {
 		gc.logger.Debug("Empty membership, no need to publish StateInfo message.")
 		return
@@ -910,12 +945,24 @@ func newStateInfoCache(clearInterval time.Duration, hasExpired func(any) bool, v
 			case <-cache.stopChan:
 				return
 			case <-time.After(clearInterval):
-				cache.Purge(hasExpired)
+				cache.Purge(hasExpired) // 清除掉那些在本地找不到消息创造者身份证书的消息。
 			}
 		}
 	}()
 
 	return cache
+}
+
+func (sic *stateInfoCache) Add(msg *utils.SignedGossipMessage) bool {
+	if !sic.verify(msg) {
+		return false
+	}
+	added := sic.MessageStore.Add(msg)
+	if added {
+		pkiID := msg.GetStateInfo().PkiId
+		sic.MembershipStore.Put(pkiID, msg)
+	}
+	return added
 }
 
 func (sic *stateInfoCache) validate(orgs []utils.OrgIdentityType) {
@@ -933,4 +980,86 @@ func (sic *stateInfoCache) delete(sgm *utils.SignedGossipMessage) {
 		return bytes.Equal(pkiID, sgm.GetStateInfo().PkiId)
 	})
 	sic.Remove(sgm.GetStateInfo().PkiId)
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+type membershipTracker struct {
+	getPeersToTrack func() utils.Members
+	report          func(format string, args ...any)
+	stopChan        chan struct{}
+	tickerC         <-chan time.Time
+	metrics         *metrics.MembershipMetrics
+	channelID       utils.ChannelID
+}
+
+func endpoints(members utils.Members) [][]string {
+	var curView [][]string
+	for _, member := range members {
+		internal := member.InternalEndpoint
+		external := member.Endpoint
+		var endpoints []string
+		if internal != external {
+			endpoints = append(endpoints, external, internal)
+		} else {
+			endpoints = append(endpoints, external)
+		}
+		curView = append(curView, endpoints)
+	}
+	return curView
+}
+
+func (mt *membershipTracker) checkIfPeersChanged(prevPeers utils.Members, currPeers utils.Members, prevSetPeers map[string]struct{}, currSetPeers map[string]struct{}) {
+	var currView [][]string
+
+	// 把不在 currSetPeers 里但在 prevPeers 里的节点挑出来，也就是说把当前这个时候消失的旧节点挑出来
+	wereInPrev := endpoints(prevPeers.Filter(func(peer utils.NetworkMember) bool {
+		_, exists := currSetPeers[peer.PKIid.String()]
+		return !exists
+	}))
+
+	// 把不在 prevSetPeers 里但在 currPeers 里的节点挑出来，也就是说把当前这个时候新出现的节点挑出来
+	newInCurr := endpoints(currPeers.Filter(func(peer utils.NetworkMember) bool {
+		_, exists := prevSetPeers[peer.PKIid.String()]
+		return !exists
+	}))
+
+	currView = endpoints(currPeers)
+
+	if !reflect.DeepEqual(wereInPrev, newInCurr) {
+		if len(wereInPrev) == 0 {
+			mt.report("Membership view has changed, peers went online: %s, current view: %s.", newInCurr, currView)
+		} else if len(newInCurr) == 0 {
+			mt.report("Membership view has changed, peers went offline: %s, current view: %s.", wereInPrev, currView)
+		} else {
+			mt.report("Membership view has changed, peers went online: %s, peers went offline: %s, current view: %s.", newInCurr, wereInPrev, currView)
+		}
+	}
+}
+
+func (mt *membershipTracker) createSetOfPeers(peers utils.Members) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, peer := range peers {
+		set[peer.PKIid.String()] = struct{}{}
+	}
+	return set
+}
+
+func (mt *membershipTracker) trackMembershipChanges() {
+	prevPeers := mt.getPeersToTrack()
+	prevSetPeers := mt.createSetOfPeers(prevPeers)
+
+	for {
+		select {
+		case <-mt.stopChan:
+			return
+		case <-mt.tickerC:
+			currPeers := mt.getPeersToTrack()
+			mt.metrics.Total.With("channel", mt.channelID.String()).Set(float64(len(currPeers)))
+			currSetPeers := mt.createSetOfPeers(currPeers)
+			mt.checkIfPeersChanged(prevPeers, currPeers, prevSetPeers, currSetPeers)
+			prevPeers = currPeers
+			prevSetPeers = mt.createSetOfPeers(prevPeers)
+		}
+	}
 }

@@ -177,7 +177,7 @@ func InternalEndpoint(se *pgossip.SecretEnvelope) string {
 
 func ChannelToString(channel []byte) string {
 	if len(channel) == 0 {
-		return "nil-channel"
+		return "<nil>"
 	}
 	return hex.EncodeToString(channel)
 }

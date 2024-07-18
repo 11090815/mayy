@@ -65,11 +65,11 @@ func (id PKIidType) String() string {
 
 func StringToPKIidType(idStr string) PKIidType {
 	if idStr == "<nil>" {
-		return nil
+		return PKIidType{}
 	}
 	id, err := hex.DecodeString(idStr)
 	if err != nil {
-		panic(fmt.Sprintf("failed unmarshal pki-id: %s", err.Error()))
+		panic(fmt.Sprintf("failed unmarshalling pki-id: %s", err.Error()))
 	}
 	return PKIidType(id)
 }
@@ -85,9 +85,20 @@ type OrgIdentityType []byte
 
 func (o OrgIdentityType) String() string {
 	if len(o) == 0 {
-		return "<nil org-id>"
+		return "<nil>"
 	}
 	return hex.EncodeToString(o)
+}
+
+func StringToOrgIdentityType(idStr string) OrgIdentityType {
+	if idStr == "<nil>" {
+		return OrgIdentityType{}
+	}
+	id, err := hex.DecodeString(idStr)
+	if err != nil {
+		panic(fmt.Sprintf("failed unmarshalling org-id: %s", err.Error()))
+	}
+	return OrgIdentityType(id)
 }
 
 type PeerIdentityInfo struct {
