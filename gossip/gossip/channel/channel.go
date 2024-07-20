@@ -58,7 +58,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 		selfOrg:                   org,
 		pkiID:                     pkiID,
 		mcs:                       mcs,
-		Adapter:                   adapter,
+		adapter:                   adapter,
 		stopCh:                    make(chan struct{}),
 		shouldGossipStateInfo:     int32(0),
 		stateInfoPublishScheduler: time.NewTicker(adapter.GetConf().PublishStateInfoInterval),
@@ -75,17 +75,17 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 		return fmt.Sprintf("%d", m.(*utils.SignedGossipMessage).GetDataMsg().Payload.SeqNum)
 	}
 	gc.blockMsgStore = msgstore.NewMessageStoreExpirable(comparator, func(m any) {
-		gc.logger.Debugf("Removing No.%d block from blocks puller.", seqNumFromMsg(m))
+		gc.logger.Debugf("Removing No.%s block from blocks puller.", seqNumFromMsg(m))
 		gc.blocksPuller.Remove(seqNumFromMsg(m))
-	}, gc.GetConf().BlockExpirationInterval, nil, nil, func(a any) {
-		gc.logger.Debugf("Removing No.%d block from blocks puller.", seqNumFromMsg(a))
+	}, gc.adapter.GetConf().BlockExpirationInterval, nil, nil, func(a any) {
+		gc.logger.Debugf("Removing No.%s block from blocks puller.", seqNumFromMsg(a))
 		gc.blocksPuller.Remove(seqNumFromMsg(a))
 	})
 
 	// hashPeerExpiredInMembership 如果在本地找不到消息创造者的证书，就返回 true。
 	hashPeerExpiredInMembership := func(a any) bool {
 		pid := a.(*utils.SignedGossipMessage).GetStateInfo().PkiId
-		return gc.Lookup(pid) == nil
+		return gc.adapter.Lookup(pid) == nil
 	}
 
 	verifyStateInfoMsg := func(msg *utils.SignedGossipMessage, orgs ...utils.OrgIdentityType) bool {
@@ -121,7 +121,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 			return true
 		}
 
-		o := gc.GetOrgOfPeer(pid)
+		o := gc.adapter.GetOrgOfPeer(pid)
 		if !isOrgInChannel(o) {
 			// 状态信息消息的发送者所在的机构不在本通道内，那么此状态信息消息是无效的。
 			gc.logger.Warnf("Peer's organization (%s) is not in the channel.", o.String())
@@ -134,7 +134,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 		return true
 	}
 
-	gc.stateInfoMsgStore = newStateInfoCache(gc.GetConf().StateInfoCacheSweepInterval, hashPeerExpiredInMembership, verifyStateInfoMsg)
+	gc.stateInfoMsgStore = newStateInfoCache(gc.adapter.GetConf().StateInfoCacheSweepInterval, hashPeerExpiredInMembership, verifyStateInfoMsg)
 
 	gc.updateProperties(1, nil, false)
 	gc.setupSignedStateInfoMessage()
@@ -148,7 +148,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 	go gc.periodicalInvocation(gc.publishStateInfo, gc.stateInfoPublishScheduler.C)
 	go gc.periodicalInvocation(gc.requestStateInfo, gc.stateInfoRequestScheduler.C)
 
-	ticker := time.NewTicker(gc.GetConf().TimeForMembershipTracker)
+	ticker := time.NewTicker(gc.adapter.GetConf().TimeForMembershipTracker)
 	gc.membershipTracker = &membershipTracker{
 		getPeersToTrack: gc.GetPeers,
 		report:          gc.logger.Infof,
@@ -215,7 +215,7 @@ func (gc *gossipChannel) GetPeers() utils.Members {
 		return members
 	}
 
-	for _, member := range gc.GetMembership() {
+	for _, member := range gc.adapter.GetMembership() {
 		stateInfo := gc.stateInfoMsgStore.MsgByID(member.PKIid)
 		if stateInfo == nil {
 			continue
@@ -233,7 +233,7 @@ func (gc *gossipChannel) GetPeers() utils.Members {
 
 func (gc *gossipChannel) PeerFilter(pred utils.SubChannelSelectionRule) utils.RoutingFilter {
 	return func(nm utils.NetworkMember) bool {
-		peerIdentity := gc.GetIdentityByPKIID(nm.PKIid)
+		peerIdentity := gc.adapter.GetIdentityByPKIID(nm.PKIid)
 		if len(peerIdentity) == 0 {
 			return false
 		}
@@ -253,7 +253,7 @@ func (gc *gossipChannel) PeerFilter(pred utils.SubChannelSelectionRule) utils.Ro
 
 // IsMemberInChannel 如果该成员所在的组织在通道内，那么此成员就一定在通道内。
 func (gc *gossipChannel) IsMemberInChannel(member utils.NetworkMember) bool {
-	org := gc.GetOrgOfPeer(member.PKIid)
+	org := gc.adapter.GetOrgOfPeer(member.PKIid)
 	if org == nil {
 		return false
 	}
@@ -305,7 +305,7 @@ func (gc *gossipChannel) UpdateChaincodes(chaincodes []*pgossip.Chaincode) {
 // ShouldGetBlocksForThisChannel 如果根据给定的节点标识符，能在本地找到该节点的身份证书，且这个节点给我们发送过消息，
 // 则该节点就可以从此通道内获取区块。
 func (gc *gossipChannel) ShouldGetBlocksForThisChannel(member utils.NetworkMember) bool {
-	peerIdentity := gc.GetIdentityByPKIID(member.PKIid)
+	peerIdentity := gc.adapter.GetIdentityByPKIID(member.PKIid)
 	if len(peerIdentity) == 0 {
 		gc.logger.Warnf("Identity for peer %s doesn't exist.", member.PKIid.String())
 		return false
@@ -326,7 +326,7 @@ func (gc *gossipChannel) HandleMessage(msg utils.ReceivedMessage) {
 		return
 	}
 
-	orgId := gc.GetOrgOfPeer(msg.GetConnectionInfo().PkiID)
+	orgId := gc.adapter.GetOrgOfPeer(msg.GetConnectionInfo().PkiID)
 	if len(orgId) == 0 {
 		gc.logger.Warnf("The peer sent message %s belongs to an unknown organization, discarding it.", utils.GossipMessageToString(sgm.GossipMessage))
 		return
@@ -374,8 +374,8 @@ func (gc *gossipChannel) HandleMessage(msg utils.ReceivedMessage) {
 		}
 
 		if added {
-			gc.Forward(msg)
-			gc.DeMultiplex(msg)
+			gc.adapter.Forward(msg)
+			gc.adapter.DeMultiplex(msg)
 		}
 		return
 	}
@@ -434,19 +434,19 @@ func (gc *gossipChannel) HandleMessage(msg utils.ReceivedMessage) {
 	}
 
 	if leadership := sgm.GetLeadershipMsg(); leadership != nil {
-		orgOfSender := gc.GetOrgOfPeer(msg.GetConnectionInfo().PkiID)
+		orgOfSender := gc.adapter.GetOrgOfPeer(msg.GetConnectionInfo().PkiID)
 		if !bytes.Equal(gc.selfOrg, orgOfSender) {
 			gc.logger.Warnf("Received a leadership message from %s that belongs to a foreign organization %s.", msg.GetConnectionInfo().PkiID.String(), orgOfSender.String())
 			return
 		}
-		orgOfMsgCreator := gc.GetOrgOfPeer(leadership.PkiId)
+		orgOfMsgCreator := gc.adapter.GetOrgOfPeer(leadership.PkiId)
 		if !bytes.Equal(gc.selfOrg, orgOfMsgCreator) {
 			gc.logger.Warnf("Received leadership message created by %s that belongs to a foreign organization %s.", utils.PKIidType(leadership.PkiId).String(), orgOfMsgCreator.String())
 			return
 		}
 		added := gc.leaderMsgStore.Add(sgm)
 		if added {
-			gc.DeMultiplex(sgm)
+			gc.adapter.DeMultiplex(sgm)
 		}
 	}
 }
@@ -549,7 +549,7 @@ type Adapter interface {
 }
 
 type gossipChannel struct {
-	Adapter
+	adapter Adapter
 
 	// 状态信息
 	selfOrg                utils.OrgIdentityType
@@ -584,11 +584,11 @@ type gossipChannel struct {
 // GetMembership 只返回那些在本地能找到身份证书且能从本通道内获得区块的 peer 节点。
 func (gc *gossipChannel) GetMembership() utils.Members {
 	if gc.hasLeftChannel() {
-		gc.logger.Warnf("Peer %s has left the gossip channel.", gc.pkiID.String())
+		gc.logger.Warnf("We %s have left the gossip channel.", gc.pkiID.String())
 		return nil
 	}
 	var members utils.Members
-	for _, member := range gc.Adapter.GetMembership() {
+	for _, member := range gc.adapter.GetMembership() {
 		if gc.eligibleForChannelAndSameOrg(member) {
 			members = append(members, member)
 		}
@@ -600,7 +600,7 @@ func (gc *gossipChannel) GetMembership() utils.Members {
 
 func (gc *gossipChannel) eligibleForChannelAndSameOrg(this utils.NetworkMember) bool {
 	sameOrg := func(that utils.NetworkMember) bool {
-		return bytes.Equal(gc.GetOrgOfPeer(that.PKIid), gc.selfOrg)
+		return bytes.Equal(gc.adapter.GetOrgOfPeer(that.PKIid), gc.selfOrg)
 	}
 	return utils.CombineRoutingFilters(gc.ShouldGetBlocksForThisChannel, sameOrg)(this)
 }
@@ -656,7 +656,7 @@ func (gc *gossipChannel) createStateInfoSnapshot(requestOrg utils.OrgIdentityTyp
 	elements := []*pgossip.Envelope{}
 	for _, rawElement := range rawElements {
 		sgm := rawElement.(*utils.SignedGossipMessage)
-		orgOfCurrentMsg := gc.GetOrgOfPeer(sgm.GetStateInfo().PkiId)
+		orgOfCurrentMsg := gc.adapter.GetOrgOfPeer(sgm.GetStateInfo().PkiId)
 
 		// 如果请求者与自己在同一组织内，或者状态消息来自于其他组织，那么就将此状态信息告诉给请求者。
 		if sameOrg || !bytes.Equal(orgOfCurrentMsg, gc.selfOrg) {
@@ -665,7 +665,7 @@ func (gc *gossipChannel) createStateInfoSnapshot(requestOrg utils.OrgIdentityTyp
 		}
 
 		// 如果状态消息的发送者没有 external endpoint，则此消息不告诉给请求者。
-		if member := gc.Lookup(sgm.GetStateInfo().PkiId); member == nil || member.Endpoint == "" {
+		if member := gc.adapter.Lookup(sgm.GetStateInfo().PkiId); member == nil || member.Endpoint == "" {
 			continue
 		}
 
@@ -688,13 +688,13 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 	config := pull.PullConfig{
 		MsgType:           pgossip.PullMsgType_BLOCK_MSG,
 		Channel:           gc.channelID,
-		PeerCountToSelect: gc.GetConf().PullPeerNum,
-		PullInterval:      gc.GetConf().PullInterval,
+		PeerCountToSelect: gc.adapter.GetConf().PullPeerNum,
+		PullInterval:      gc.adapter.GetConf().PullInterval,
 		Tag:               pgossip.GossipMessage_CHAN_AND_ORG,
 		PullEngineConfig: algo.PullEngineConfig{
-			DigestWaitTime:   gc.GetConf().DigestWaitTime,
-			RequestWaitTime:  gc.GetConf().RequestWaitTime,
-			ResponseWaitTime: gc.GetConf().ResponseWaitTime,
+			DigestWaitTime:   gc.adapter.GetConf().DigestWaitTime,
+			RequestWaitTime:  gc.adapter.GetConf().RequestWaitTime,
+			ResponseWaitTime: gc.adapter.GetConf().ResponseWaitTime,
 		},
 	}
 
@@ -708,11 +708,11 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 	}
 
 	adapter := &pull.PullAdapter{
-		Sender:               gc,
+		Sender:               gc.adapter,
 		MembershipService:    gc,
 		IdentitfierExtractor: identifierExtractor,
 		MsgConsumer: func(message *utils.SignedGossipMessage) {
-			gc.DeMultiplex(message)
+			gc.adapter.DeMultiplex(message)
 		},
 	}
 
@@ -825,7 +825,7 @@ func (gc *gossipChannel) setupSignedStateInfoMessage() (*utils.SignedGossipMessa
 	stateInfoMsg := gc.selfStateInfoMsg
 	gc.mutex.RUnlock()
 
-	signedStateInfoMsg, err := gc.Sign(stateInfoMsg)
+	signedStateInfoMsg, err := gc.adapter.Sign(stateInfoMsg)
 	if err != nil {
 		gc.logger.Errorf("Failed signing state info message: %s.", err.Error())
 		return nil, err
@@ -843,8 +843,8 @@ func (gc *gossipChannel) requestStateInfo() {
 		gc.logger.Warnf("Failed creating request message for state info: %s.", err.Error())
 		return
 	}
-	endpoints := utils.SelectPeers(gc.GetConf().PullPeerNum, gc.GetMembership(), gc.IsMemberInChannel)
-	gc.Send(req, endpoints...)
+	endpoints := utils.SelectPeers(gc.adapter.GetConf().PullPeerNum, gc.adapter.GetMembership(), gc.IsMemberInChannel)
+	gc.adapter.Send(req, endpoints...)
 }
 
 // publishStateInfo 每次广播过状态消息后，都会将 shouldGossipStateInfo 标志位设置成 0。
@@ -853,7 +853,7 @@ func (gc *gossipChannel) publishStateInfo() {
 		return
 	}
 
-	if len(gc.GetMembership()) == 0 {
+	if len(gc.adapter.GetMembership()) == 0 {
 		gc.logger.Debug("Empty membership, no need to publish StateInfo message.")
 		return
 	}
@@ -870,7 +870,7 @@ func (gc *gossipChannel) publishSignedStateInfoMessage() {
 		return
 	}
 	gc.stateInfoMsgStore.Add(signedStateInfoMsg)
-	gc.Gossip(signedStateInfoMsg)
+	gc.adapter.Gossip(signedStateInfoMsg)
 }
 
 func (gc *gossipChannel) handleStateInfoSnapshot(m *pgossip.GossipMessage, sender utils.PKIidType) {
@@ -886,7 +886,7 @@ func (gc *gossipChannel) handleStateInfoSnapshot(m *pgossip.GossipMessage, sende
 			gc.logger.Warnf("Channel %s: there is a element in state info snapshot isn't the StateInfo message, which was sent by sender %s.", channelName, sender.String())
 			return
 		}
-		orgID := gc.GetOrgOfPeer(stateInfo.PkiId)
+		orgID := gc.adapter.GetOrgOfPeer(stateInfo.PkiId)
 		if orgID == nil {
 			gc.logger.Warnf("Channel %s: there is a StateInfo message without organization identity, which was sent by sender %s.", channelName, sender.String())
 			return
@@ -900,11 +900,11 @@ func (gc *gossipChannel) handleStateInfoSnapshot(m *pgossip.GossipMessage, sende
 			gc.logger.Warnf("Channel %s: there is a StateInfo message sent by sender %s with unexpected MAC %x, expected %x.", channelName, sender.String(), stateInfo.Channel_MAC, expectedMAC)
 			return
 		}
-		if err := gc.ValidateStateInfoMessage(signedStateInfo); err != nil {
+		if err := gc.adapter.ValidateStateInfoMessage(signedStateInfo); err != nil {
 			gc.logger.Warnf("Channel %s: there is a invalid StateInfo message sent by sender %s, the error is %s.", channelName, sender.String(), err.Error())
 			return
 		}
-		if gc.Lookup(stateInfo.PkiId) == nil {
+		if gc.adapter.Lookup(stateInfo.PkiId) == nil {
 			gc.logger.Warnf("Channel %s: the received StateInfo message is about a unknown peer %s, we should ignore it.", channelName, utils.PKIidType(stateInfo.PkiId).String())
 			continue
 		}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -59,19 +58,14 @@ func (id PKIidType) String() string {
 	if len(id) == 0 {
 		return "<nil>"
 	}
-	return hex.EncodeToString(id)
-	// return string(id)
+	return string(id)
 }
 
 func StringToPKIidType(idStr string) PKIidType {
 	if idStr == "<nil>" {
 		return PKIidType{}
 	}
-	id, err := hex.DecodeString(idStr)
-	if err != nil {
-		panic(fmt.Sprintf("failed unmarshalling pki-id: %s", err.Error()))
-	}
-	return PKIidType(id)
+	return []byte(idStr)
 }
 
 // IsNotSameFilter 如果给定的另一个 id 与本 id 不一样，则返回 true。
@@ -87,18 +81,14 @@ func (o OrgIdentityType) String() string {
 	if len(o) == 0 {
 		return "<nil>"
 	}
-	return hex.EncodeToString(o)
+	return string(o)
 }
 
 func StringToOrgIdentityType(idStr string) OrgIdentityType {
 	if idStr == "<nil>" {
 		return OrgIdentityType{}
 	}
-	id, err := hex.DecodeString(idStr)
-	if err != nil {
-		panic(fmt.Sprintf("failed unmarshalling org-id: %s", err.Error()))
-	}
-	return OrgIdentityType(id)
+	return []byte(idStr)
 }
 
 type PeerIdentityInfo struct {

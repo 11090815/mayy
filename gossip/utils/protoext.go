@@ -179,7 +179,7 @@ func ChannelToString(channel []byte) string {
 	if len(channel) == 0 {
 		return "<nil>"
 	}
-	return hex.EncodeToString(channel)
+	return string(channel)
 }
 
 /* ------------------------------------------------------------------------------------------ */

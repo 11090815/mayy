@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -83,6 +84,7 @@ func (jcm *joinChanMsg) Orgs() []utils.OrgIdentityType {
 	i := 0
 	for org := range jcm.orgs2AnchorPeers {
 		orgs[i] = utils.StringToOrgIdentityType(org)
+		i++
 	}
 	return orgs
 }
@@ -272,6 +274,16 @@ func (gam *gossipAdapterMock) wasMocked(method string) bool {
 
 /* ------------------------------------------------------------------------------------------ */
 
+func sequence(start uint64, end uint64) []uint64 {
+	seqs := make([]uint64, end-start+1)
+	i := 0
+	for n := start; n <= end; n++ {
+		seqs[i] = n
+		i++
+	}
+	return seqs
+}
+
 func configureAdapter(adapter *gossipAdapterMock, members utils.Members) {
 	adapter.On("GetConf").Return(conf)
 	adapter.On("GetMembership").Return(members)
@@ -298,6 +310,107 @@ func createStateInfoMsg(ledgerHeight uint64, pkiID utils.PKIidType, channel util
 		},
 	})
 	return sgm
+}
+
+func createDataMsg(seqnum uint64, channel utils.ChannelID) *utils.SignedGossipMessage {
+	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
+		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+		Channel: channel,
+		Content: &pgossip.GossipMessage_DataMsg{
+			DataMsg: &pgossip.DataMessage{
+				Payload: &pgossip.Payload{
+					SeqNum: seqnum,
+					Data:   []byte{},
+				},
+			},
+		},
+	})
+	return sgm
+}
+
+func createHelloMsg(pkiID utils.PKIidType) *receivedMsg {
+	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
+		Channel: channelA,
+		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+		Content: &pgossip.GossipMessage_Hello{
+			Hello: &pgossip.GossipHello{
+				Nonce:    500,
+				Metadata: nil,
+				MsgType:  pgossip.PullMsgType_BLOCK_MSG,
+			},
+		},
+	})
+	return &receivedMsg{msg: sgm, pkiID: pkiID}
+}
+
+func createDataUpdateMsg(nonce uint64, seqs ...uint64) *utils.SignedGossipMessage {
+	msg := &pgossip.GossipMessage{
+		Nonce:   0,
+		Channel: channelA,
+		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+		Content: &pgossip.GossipMessage_DataUpdate{
+			DataUpdate: &pgossip.DataUpdate{
+				MsgType: pgossip.PullMsgType_BLOCK_MSG,
+				Nonce:   nonce,
+				Data:    []*pgossip.Envelope{},
+			},
+		},
+	}
+	for _, seq := range seqs {
+		msg.GetDataUpdate().Data = append(msg.GetDataUpdate().Data, createDataMsg(seq, channelA).Envelope)
+	}
+	sgm, _ := utils.NoopSign(msg)
+	return sgm
+}
+
+func simulatePullPhaseWithVariableDigest(gc GossipChannel, t *testing.T, wg *sync.WaitGroup, mutator msgMutator, proposedDigestSeqs [][]byte, resultDigestSeqs []string, seqs ...uint64) func(args mock.Arguments) {
+	var mutex sync.Mutex
+	var sentHello bool
+	var sentReq bool
+
+	return func(args mock.Arguments) {
+		msg := args.Get(0).(*utils.SignedGossipMessage)
+		mutex.Lock()
+		defer mutex.Unlock()
+		if msg.GetHello() != nil && !sentHello {
+			sentHello = true
+			sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
+				Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+				Channel: channelA,
+				Content: &pgossip.GossipMessage_DataDig{
+					DataDig: &pgossip.DataDigest{
+						MsgType: pgossip.PullMsgType_BLOCK_MSG,
+						Digests: proposedDigestSeqs,
+						Nonce:   msg.GetHello().Nonce,
+					},
+				},
+			})
+			digestMsg := &receivedMsg{
+				pkiID: pkiIDInOrg1,
+				msg:   sgm,
+			}
+			go gc.HandleMessage(digestMsg)
+		}
+		if msg.GetDataReq() != nil && !sentReq {
+			sentReq = true
+			dataReq := msg.GetDataReq()
+			for _, expectedDigest := range utils.StringsToBytes(resultDigestSeqs) {
+				require.Contains(t, dataReq.Digests, expectedDigest)
+			}
+			require.Equal(t, len(resultDigestSeqs), len(dataReq.Digests))
+
+			dataUpdateMsg := new(receivedMsg)
+			dataUpdateMsg.pkiID = pkiIDInOrg1
+			dataUpdateMsg.msg = createDataUpdateMsg(dataReq.Nonce, seqs...)
+			mutator(dataUpdateMsg.msg.GetDataUpdate().Data[0])
+			gc.HandleMessage(dataUpdateMsg)
+			wg.Done()
+		}
+	}
+}
+
+func simulatePullPhase(gc GossipChannel, t *testing.T, wg *sync.WaitGroup, mutator msgMutator, seqs ...uint64) func(args mock.Arguments) {
+	return simulatePullPhaseWithVariableDigest(gc, t, wg, mutator, [][]byte{[]byte("10"), []byte("11")}, []string{"10", "11"}, seqs...)
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -422,4 +535,189 @@ func TestMsgStoreNotExpire(t *testing.T) {
 	c = make(chan *utils.SignedGossipMessage, 3)
 	simulateStateInfoRequest(pkiID3, c)
 	require.Len(t, c, 2)
+}
+
+func TestLeaveChannel(t *testing.T) {
+	jcm := &joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			"ORG1": {},
+			"ORG2": {},
+		},
+	}
+
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	adapter := new(gossipAdapterMock)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+	members := make(utils.Members, 2)
+	members[0] = utils.NetworkMember{PKIid: pkiIDInOrg1}
+	members[1] = utils.NetworkMember{PKIid: pkiIDInOrg2}
+
+	var helloPullWG sync.WaitGroup
+	helloPullWG.Add(1)
+
+	configureAdapter(adapter, members)
+	gc := NewGossipChannel(utils.PKIidType("p0"), orgInChannelA, cs, channelA, adapter, jcm, disabledMetrics, logger)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		msg := args.Get(0).(*utils.SignedGossipMessage)
+		if utils.IsPullMsg(msg.GossipMessage) {
+			helloPullWG.Done()
+			require.False(t, gc.(*gossipChannel).hasLeftChannel())
+		}
+	})
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	time.Sleep(time.Millisecond * 10)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg2, msg: createStateInfoMsg(1, pkiIDInOrg2, channelA)})
+	time.Sleep(time.Millisecond * 10)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createDataMsg(2, channelA)})
+	time.Sleep(time.Millisecond * 10)
+	require.Len(t, gc.GetPeers(), 1)
+
+	require.Equal(t, pkiIDInOrg1, gc.GetPeers()[0].PKIid)
+	var digestSendTime int32
+	var DigestSentWG sync.WaitGroup
+	DigestSentWG.Add(1)
+	hello := createHelloMsg(pkiIDInOrg1)
+	hello.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		atomic.AddInt32(&digestSendTime, 1)
+		require.Equal(t, int32(1), atomic.LoadInt32(&digestSendTime))
+		DigestSentWG.Done()
+	})
+	helloPullWG.Wait()
+	go gc.HandleMessage(hello)
+	DigestSentWG.Wait()
+	gc.LeaveChannel()
+	go gc.HandleMessage(hello)
+	require.Len(t, gc.GetPeers(), 0)
+	time.Sleep(conf.PullInterval * 3)
+}
+
+func TestChannelPeriodicalPublishStateInfo(t *testing.T) {
+	ledgerHeight := 5
+	receivedMsgCount := int32(0)
+	stateInfoReceptionChan := make(chan *utils.SignedGossipMessage, 1)
+
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	peerA := utils.NetworkMember{
+		PKIid:            pkiIDInOrg1,
+		Endpoint:         "127.0.0.1",
+		InternalEndpoint: "localhost",
+	}
+	members := utils.Members{}
+	members = append(members, peerA)
+
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, members)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("Gossip", mock.Anything).Run(func(args mock.Arguments) {
+		if atomic.LoadInt32(&receivedMsgCount) == int32(1) {
+			return
+		}
+		atomic.StoreInt32(&receivedMsgCount, 1)
+		msg := args.Get(0).(*utils.SignedGossipMessage)
+		stateInfoReceptionChan <- msg
+	})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.UpdateLedgerHeight(uint64(ledgerHeight))
+	defer gc.Stop()
+
+	var msg *utils.SignedGossipMessage
+	select {
+	case <-time.After(time.Second * 5):
+		t.Fatal("Haven't sent state info on time")
+	case m := <-stateInfoReceptionChan:
+		msg = m
+	}
+	require.Equal(t, ledgerHeight, int(msg.GetStateInfo().Properties.LedgerHeight))
+}
+
+func TestChannelMsgStoreEviction(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	adapter := new(gossipAdapterMock)
+	peerA := utils.NetworkMember{
+		PKIid:            pkiIDInOrg1,
+		Endpoint:         "127.0.0.1",
+		InternalEndpoint: "localhost",
+	}
+	members := utils.Members{}
+	members = append(members, peerA)
+	configureAdapter(adapter, members)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(args mock.Arguments) {})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	defer gc.Stop()
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(100, pkiIDInOrg1, channelA)})
+
+	var wg sync.WaitGroup
+
+	msgsPerPhase := uint64(50)
+	lastPullPhase := make(chan uint64, msgsPerPhase)
+	totalPhases := uint64(4)
+	phaseNum := uint64(0)
+	wg.Add(int(totalPhases))
+
+	adapter.On("Send", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		msg := args.Get(0).(*utils.SignedGossipMessage)
+		if !utils.IsPullMsg(msg.GossipMessage) {
+			return
+		}
+
+		if atomic.LoadUint64(&phaseNum) == totalPhases && msg.GetHello() != nil {
+			return
+		}
+
+		start := atomic.LoadUint64(&phaseNum) * msgsPerPhase
+		end := start + msgsPerPhase
+
+		if msg.GetHello() != nil {
+			atomic.AddUint64(&phaseNum, 1)
+		}
+
+		currSeq := sequence(start, end)
+		pullPhase := simulatePullPhase(gc, t, &wg, func(message *pgossip.Envelope) {}, currSeq...)
+		pullPhase(args)
+
+		if msg.GetDataReq() != nil && atomic.LoadUint64(&phaseNum) == totalPhases {
+			for _, seq := range currSeq {
+				lastPullPhase <- seq
+			}
+			close(lastPullPhase)
+		}
+	})
+	wg.Wait()
+
+	msgSentFromPullMediator := make(chan *pgossip.GossipMessage, 1)
+	helloMsg := createHelloMsg(pkiIDInOrg1)
+	helloMsg.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		msg := args.Get(0).(*pgossip.GossipMessage)
+		if msg.GetDataDig() == nil {
+			return
+		}
+		msgSentFromPullMediator <- msg
+	})
+	gc.HandleMessage(helloMsg)
+	select {
+	case msg := <-msgSentFromPullMediator:
+		msgSentFromPullMediator <- msg
+	case <-time.After(time.Second * 5):
+		t.Fatal("Didn't reply with a digest on time")
+	}
+
+	require.Len(t, msgSentFromPullMediator, 1)
+	msg := <- msgSentFromPullMediator
+	require.True(t, msg.GetDataDig() != nil)
+	require.Len(t, msg.GetDataDig().Digests, adapter.GetConf().MaxBlockCountToStore+1)
+	for seq := range lastPullPhase {
+		require.Contains(t, msg.GetDataDig().Digests, []byte(fmt.Sprintf("%d", seq)))
+	}
 }

@@ -1,8 +1,6 @@
 package utils
 
 import (
-	"encoding/hex"
-	"fmt"
 	"reflect"
 
 	"github.com/11090815/mayy/csp/factory"
@@ -16,18 +14,14 @@ func (id ChannelID) String() string {
 	if len(id) == 0 {
 		return "<nil>"
 	}
-	return hex.EncodeToString(id)
+	return string(id)
 }
 
 func StringToChannelID(idStr string) ChannelID {
 	if idStr == "<nil>" {
 		return ChannelID{}
 	}
-	id, err := hex.DecodeString(idStr)
-	if err != nil {
-		panic(fmt.Sprintf("failed unmarshalling channel-id: %s", err.Error()))
-	}
-	return ChannelID(id)
+	return []byte(idStr)
 }
 
 /* ------------------------------------------------------------------------------------------ */
