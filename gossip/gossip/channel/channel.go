@@ -314,6 +314,7 @@ func (gc *gossipChannel) ShouldGetBlocksForThisChannel(member utils.NetworkMembe
 	return msg != nil
 }
 
+// HandleMessage 如果收到的消息是 pull 类型的，那么此消息的发送者必须和自己在同一 org 内，否则会直接忽略掉。
 func (gc *gossipChannel) HandleMessage(msg utils.ReceivedMessage) {
 	if !gc.verifyMsg(msg) {
 		gc.logger.Warnf("Failed verifying message: %s.", utils.GossipMessageToString(msg.GetSignedGossipMessage().GossipMessage))
@@ -375,11 +376,12 @@ func (gc *gossipChannel) HandleMessage(msg utils.ReceivedMessage) {
 
 		if added {
 			gc.adapter.Forward(msg)
-			gc.adapter.DeMultiplex(msg)
+			gc.adapter.DeMultiplex(sgm)
 		}
 		return
 	}
 
+	// 将 pull 消息存储到 PullStore 里
 	if utils.IsPullMsg(sgm.GossipMessage) && utils.GetPullMsgType(sgm.GossipMessage) == pgossip.PullMsgType_BLOCK_MSG {
 		if gc.hasLeftChannel() {
 			gc.logger.Infof("We have left the channel, so we have to discard the pull message %s from %s.", sgm.String(), msg.GetConnectionInfo().PkiID.String())
@@ -387,7 +389,7 @@ func (gc *gossipChannel) HandleMessage(msg utils.ReceivedMessage) {
 		}
 
 		if gc.stateInfoMsgStore.MsgByID(msg.GetConnectionInfo().PkiID) == nil {
-			gc.logger.Debugf("Because we don't have StateInfo message of peer %s, so we have no way of validating its eligibility in the channel %s.", msg.GetConnectionInfo().PkiID.String(), gc.channelID.String())
+			gc.logger.Infof("Because we don't have StateInfo message of peer %s, so we have no way of validating its eligibility in the channel %s.", msg.GetConnectionInfo().PkiID.String(), gc.channelID.String())
 			return
 		}
 		if !gc.eligibleForChannelAndSameOrg(utils.NetworkMember{PKIid: msg.GetConnectionInfo().PkiID}) {
@@ -455,7 +457,7 @@ func (gc *gossipChannel) AddToMsgStore(sgm *utils.SignedGossipMessage) {
 	if dataMsg := sgm.GetDataMsg(); dataMsg != nil {
 		gc.mutex.Lock()
 		defer gc.mutex.Unlock()
-		added := gc.blockMsgStore.Add(dataMsg)
+		added := gc.blockMsgStore.Add(sgm)
 		if added {
 			gc.logger.Debugf("Add block %s to the block store.", utils.DataMessageToString(dataMsg))
 			gc.blocksPuller.Add(sgm)
@@ -527,7 +529,7 @@ type Adapter interface {
 	// Gossip 在通道内广播消息。
 	Gossip(*utils.SignedGossipMessage)
 
-	// Forward 将消息转发给下一跳。
+	// Forward 将消息转发给下一跳。（只转发区块和状态信息）
 	Forward(utils.ReceivedMessage)
 
 	// DeMultiplex 将消息分发给相关订阅者。
@@ -598,11 +600,13 @@ func (gc *gossipChannel) GetMembership() utils.Members {
 
 /* ------------------------------------------------------------------------------------------ */
 
-func (gc *gossipChannel) eligibleForChannelAndSameOrg(this utils.NetworkMember) bool {
+// eligibleForChannelAndSameOrg 判断给定的 peer 节点所来自的 org 与我所在的 org 是否一样，并且还要判断此节点之前
+// 有没有给我们发送过状态信息，同时还要判断此节点是否有合法的证书存储在我们本地，前面三者都满足的情况下，此方法返回 true。
+func (gc *gossipChannel) eligibleForChannelAndSameOrg(that utils.NetworkMember) bool {
 	sameOrg := func(that utils.NetworkMember) bool {
 		return bytes.Equal(gc.adapter.GetOrgOfPeer(that.PKIid), gc.selfOrg)
 	}
-	return utils.CombineRoutingFilters(gc.ShouldGetBlocksForThisChannel, sameOrg)(this)
+	return utils.CombineRoutingFilters(gc.ShouldGetBlocksForThisChannel, sameOrg)(that)
 }
 
 func (gc *gossipChannel) hasLeftChannel() bool {
@@ -636,8 +640,9 @@ func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*pgo
 
 func (gc *gossipChannel) createStateInfoRequest() (*utils.SignedGossipMessage, error) {
 	return utils.NoopSign(&pgossip.GossipMessage{
-		Tag:   pgossip.GossipMessage_CHAN_OR_ORG,
-		Nonce: 0,
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
+		Nonce:   0,
+		Channel: gc.channelID,
 		Content: &pgossip.GossipMessage_StateInfoPullReq{
 			StateInfoPullReq: &pgossip.StateInfoPullRequest{
 				Channel_MAC: utils.GenerateMAC(gc.pkiID, gc.channelID),
@@ -752,8 +757,9 @@ func (gc *gossipChannel) verifyMsg(msg utils.ReceivedMessage) bool {
 	}
 
 	// 这里的验证顺序与 fabric 不同，导致传递的状态信息消息，必须附带 channel-id。
-	if !bytes.Equal(sgm.Channel, gc.channelID) {
-		gc.logger.Warnf("The received message comes from the different channel %x.", sgm.Channel)
+	channelID := utils.ChannelID(sgm.Channel)
+	if !bytes.Equal(channelID, gc.channelID) {
+		gc.logger.Warnf("The received message comes from the different channel %s.", channelID)
 		return false
 	}
 
@@ -774,7 +780,7 @@ func (gc *gossipChannel) verifyMsg(msg utils.ReceivedMessage) bool {
 	if stateInfoPullRequest := sgm.GetStateInfoPullReq(); stateInfoPullRequest != nil {
 		expectedMAC := utils.GenerateMAC(msg.GetConnectionInfo().PkiID, gc.channelID)
 		if !bytes.Equal(expectedMAC, stateInfoPullRequest.Channel_MAC) {
-			gc.logger.Warn("StateInfoPullReq message contains wrong Channel_MAC %x, expected %x.", stateInfoPullRequest.Channel_MAC, expectedMAC)
+			gc.logger.Warnf("StateInfoPullReq message contains wrong Channel_MAC %x, expected %x.", stateInfoPullRequest.Channel_MAC, expectedMAC)
 			return false
 		}
 		return true
@@ -798,11 +804,11 @@ func (gc *gossipChannel) verifyBlock(msg *pgossip.GossipMessage, sender utils.PK
 	rawBlockData := payload.Data
 	block, err := protoutil.UnmarshalBlock(rawBlockData)
 	if err != nil {
-		gc.logger.Warnf("Received improperly encoded block from %s in DataMsg: %s.", sender.String(), err.Error())
+		gc.logger.Errorf("Received improperly encoded block from %s in DataMsg: %s.", sender.String(), err.Error())
 		return false
 	}
 	if err = gc.mcs.VerifyBlock(msg.Channel, seqNum, block); err != nil {
-		gc.logger.Warnf("Received invalid block from %s in DataMsg: %s.", sender.String(), err.Error())
+		gc.logger.Errorf("Received invalid block from %s in DataMsg: %s.", sender.String(), err.Error())
 		return false
 	}
 
@@ -820,6 +826,8 @@ func (gc *gossipChannel) periodicalInvocation(fn func(), c <-chan time.Time) {
 	}
 }
 
+// setupSignedStateInfoMessage 提取出自己的状态信息，然后对此状态信息进行签名，将签过名的
+// 状态信息保存下来，并返回出来。
 func (gc *gossipChannel) setupSignedStateInfoMessage() (*utils.SignedGossipMessage, error) {
 	gc.mutex.RLock()
 	stateInfoMsg := gc.selfStateInfoMsg
@@ -837,6 +845,7 @@ func (gc *gossipChannel) setupSignedStateInfoMessage() (*utils.SignedGossipMessa
 	return signedStateInfoMsg, nil
 }
 
+// requestStateInfo 随机挑选通道内的 PullPeerNum 个成员，向他们发送状态 request 消息。
 func (gc *gossipChannel) requestStateInfo() {
 	req, err := gc.createStateInfoRequest()
 	if err != nil {
@@ -847,7 +856,8 @@ func (gc *gossipChannel) requestStateInfo() {
 	gc.adapter.Send(req, endpoints...)
 }
 
-// publishStateInfo 每次广播过状态消息后，都会将 shouldGossipStateInfo 标志位设置成 0。
+// publishStateInfo 此方法用于阶段性的向通道内其他节点广播自己的状态信息，在每个阶段中，如果
+// 自己的状态没有发生改变，就不广播自己的状态信息。每次广播过状态消息后，都会将 shouldGossipStateInfo 标志位设置成 0。
 func (gc *gossipChannel) publishStateInfo() {
 	if atomic.LoadInt32(&gc.shouldGossipStateInfo) == int32(0) {
 		return
@@ -892,7 +902,7 @@ func (gc *gossipChannel) handleStateInfoSnapshot(m *pgossip.GossipMessage, sende
 			return
 		}
 		if !gc.IsOrgInChannel(orgID) {
-			gc.logger.Warn("Channel %s: there is a StateInfo message from a not eligible organization, which was sent by sender %s.", channelName, sender.String())
+			gc.logger.Warnf("Channel %s: there is a StateInfo message from a not eligible organization %s, which was sent by sender %s.", channelName, orgID.String(), sender.String())
 			return
 		}
 		expectedMAC := utils.GenerateMAC(stateInfo.PkiId, gc.channelID)
@@ -924,7 +934,7 @@ type stateInfoCache struct {
 	stopChan chan struct{}
 }
 
-func newStateInfoCache(clearInterval time.Duration, hasExpired func(any) bool, verifyFunc membershipPredicate) *stateInfoCache {
+func newStateInfoCache(clearInterval time.Duration, shouldPurge func(any) bool, verifyFunc membershipPredicate) *stateInfoCache {
 	membershipStore := utils.NewMembershipStore()
 	comparatorPolicy := utils.NewGossipMessageComparator(0)
 
@@ -945,7 +955,7 @@ func newStateInfoCache(clearInterval time.Duration, hasExpired func(any) bool, v
 			case <-cache.stopChan:
 				return
 			case <-time.After(clearInterval):
-				cache.Purge(hasExpired) // 清除掉那些在本地找不到消息创造者身份证书的消息。
+				cache.Purge(shouldPurge) // 清除掉那些在本地找不到消息创造者身份证书的消息。
 			}
 		}
 	}()

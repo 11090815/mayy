@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/common/metrics/disabled"
 	"github.com/11090815/mayy/common/mlog"
 	"github.com/11090815/mayy/gossip/metrics"
@@ -312,7 +313,29 @@ func createStateInfoMsg(ledgerHeight uint64, pkiID utils.PKIidType, channel util
 	return sgm
 }
 
-func createDataMsg(seqnum uint64, channel utils.ChannelID) *utils.SignedGossipMessage {
+func stateInfoSnapshotForChannel(channel utils.ChannelID, stateInfoMsgs ...*utils.SignedGossipMessage) *utils.SignedGossipMessage {
+	envelopes := make([]*pgossip.Envelope, len(stateInfoMsgs))
+	for i, info := range stateInfoMsgs {
+		envelopes[i] = info.Envelope
+	}
+	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
+		Channel: channel,
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
+		Nonce:   0,
+		Content: &pgossip.GossipMessage_StateInfoSnapshot{
+			StateInfoSnapshot: &pgossip.StateInfoSnapshot{
+				Elements: envelopes,
+			},
+		},
+	})
+	return sgm
+}
+
+func createDataMsg(seqnum uint64, channels ...utils.ChannelID) *utils.SignedGossipMessage {
+	var channel utils.ChannelID
+	if len(channels) == 1 {
+		channel = channels[0]
+	}
 	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
 		Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
 		Channel: channel,
@@ -714,10 +737,799 @@ func TestChannelMsgStoreEviction(t *testing.T) {
 	}
 
 	require.Len(t, msgSentFromPullMediator, 1)
-	msg := <- msgSentFromPullMediator
+	msg := <-msgSentFromPullMediator
 	require.True(t, msg.GetDataDig() != nil)
 	require.Len(t, msg.GetDataDig().Digests, adapter.GetConf().MaxBlockCountToStore+1)
 	for seq := range lastPullPhase {
 		require.Contains(t, msg.GetDataDig().Digests, []byte(fmt.Sprintf("%d", seq)))
+	}
+}
+
+func TestChannelPull(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	receivedBlockChan := make(chan *utils.SignedGossipMessage, 2)
+
+	members := new(utils.Members)
+	*members = append(*members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, *members)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(args mock.Arguments) {
+		sgm := args.Get(0).(*utils.SignedGossipMessage)
+		if sgm.GetDataMsg() != nil {
+			receivedBlockChan <- sgm
+		}
+	})
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	go gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(100, pkiIDInOrg1, channelA)})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pullPhase := simulatePullPhase(gc, t, &wg, func(message *pgossip.Envelope) {}, 10, 11)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(pullPhase)
+	wg.Wait()
+	for expectedSeq := 10; expectedSeq <= 11; expectedSeq++ {
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("Haven't received blocks on time")
+		case msg := <-receivedBlockChan:
+			require.Equal(t, uint64(expectedSeq), msg.GetDataMsg().Payload.SeqNum)
+		}
+	}
+}
+
+func TestChannelPullAccessControl(t *testing.T) {
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	pkiID1 := utils.PKIidType("1")
+	pkiID2 := utils.PKIidType("2")
+	pkiID3 := utils.PKIidType("3")
+	peer1 := utils.NetworkMember{PKIid: pkiID1, InternalEndpoint: "1"}
+	peer2 := utils.NetworkMember{PKIid: pkiID2, InternalEndpoint: "2"}
+	peer3 := utils.NetworkMember{PKIid: pkiID3, InternalEndpoint: "3"}
+	members := utils.Members{}
+	members = append(members, []utils.NetworkMember{peer1, peer2, peer3}...)
+
+	adapter.On("GetOrgOfPeer", pkiID1).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiID2).Return(orgNotInChannelA)
+	adapter.On("GetOrgOfPeer", pkiID3).Return(orgNotInChannelA)
+	configureAdapter(adapter, members)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+
+	sentHello := int32(0)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		msg := args.Get(0).(*utils.SignedGossipMessage)
+		if msg.GetHello() != nil {
+			atomic.StoreInt32(&sentHello, 1)
+			peerID := string(args.Get(1).([]*utils.RemotePeer)[0].PKIID)
+			require.Equal(t, "1", peerID)
+			require.NotEqual(t, "2", peerID)
+			require.NotEqual(t, "3", peerID)
+		}
+	})
+
+	joinMsg := &joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			"ORG1": {},
+			"ORG2": {},
+		},
+	}
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, joinMsg, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(100, pkiIDInOrg1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiID1, msg: createStateInfoMsg(100, pkiID1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiID2, msg: createStateInfoMsg(100, pkiID2, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiID3, msg: createStateInfoMsg(100, pkiID3, channelA)})
+
+	responsedChan := make(chan *pgossip.GossipMessage, 1)
+	messageRelayer := func(args mock.Arguments) {
+		msg := args.Get(0).(*pgossip.GossipMessage)
+		responsedChan <- msg
+	}
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
+
+	helloMsg := createHelloMsg(pkiID1)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	go gc.HandleMessage(helloMsg)
+	select {
+	case <-responsedChan:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't reply to a hello within a timely manner")
+	}
+
+	helloMsg = createHelloMsg(pkiID2)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	go gc.HandleMessage(helloMsg)
+	select {
+	case <-responsedChan:
+		require.Fail(t, "Should not reply to a hello message, because the hello message from a peer who is from a foreign org")
+	case <-time.After(time.Second):
+	}
+
+	helloMsg = createHelloMsg(pkiID3)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	go gc.HandleMessage(helloMsg)
+	select {
+	case <-responsedChan:
+		require.Fail(t, "Should not reply to a hello message, because the hello message from a peer who is from a foreign org")
+	case <-time.After(time.Second):
+	}
+
+	time.Sleep(time.Second * 3)
+	require.Equal(t, sentHello, int32(1))
+}
+
+func TestChannelPeerNotInChannel(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	gossipMessagesSentFromChannel := make(chan *pgossip.GossipMessage, 1)
+
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, nil)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA)})
+	require.Equal(t, 0, gc.(*gossipChannel).blockMsgStore.Size())
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg2})
+	require.Equal(t, 0, gc.(*gossipChannel).blockMsgStore.Size())
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
+	require.Equal(t, 1, gc.(*gossipChannel).blockMsgStore.Size())
+
+	messageRelayer := func(args mock.Arguments) {
+		msg := args.Get(0).(*pgossip.GossipMessage)
+		gossipMessagesSentFromChannel <- msg
+	}
+
+	gc.HandleMessage(&receivedMsg{msg: createStateInfoMsg(10, pkiIDInOrg1, channelA), pkiID: pkiIDInOrg1})
+	helloMsg := createHelloMsg(pkiIDInOrg1)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-gossipMessagesSentFromChannel:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't reply to a hello within a timely manner")
+	}
+
+	helloMsg = createHelloMsg(pkiIDInOrg2)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-gossipMessagesSentFromChannel:
+		require.Fail(t, "Should not reply to a hello message, because the hello message from a peer who is from a foreign channel")
+	case <-time.After(time.Second):
+	}
+
+	gc.HandleMessage(&receivedMsg{msg: createStateInfoMsg(10, pkiIDInOrg1ButNotEligible, channelA), pkiID: pkiIDInOrg1ButNotEligible})
+	cs.On("VerifyByChannel", mock.Anything).Return(errors.NewError("not eligible"))
+	cs.mocked = true
+	gc.ConfigureChannel(&joinChanMsg{})
+	helloMsg = createHelloMsg(pkiIDInOrg1ButNotEligible)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-gossipMessagesSentFromChannel:
+		require.Fail(t, "Should not reply to a hello message, because the hello message from a peer who is not eligible for the channel")
+	case <-time.After(time.Second):
+	}
+
+	cs.Mock = mock.Mock{}
+
+	req, _ := gc.(*gossipChannel).createStateInfoRequest()
+	validReceivedMsg := &receivedMsg{
+		msg:   req,
+		pkiID: pkiIDInOrg1,
+	}
+	validReceivedMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(validReceivedMsg)
+	select {
+	case <-gossipMessagesSentFromChannel:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't reply to a hello within a timely manner")
+	}
+
+	invalidReceivedMsg := &receivedMsg{
+		msg:   req,
+		pkiID: pkiIDInOrg2,
+	}
+	invalidReceivedMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(invalidReceivedMsg)
+	select {
+	case <-gossipMessagesSentFromChannel:
+		require.Fail(t, "Should not reply to a request message, because the request message from a peer who is from a foreign org")
+	case <-time.After(time.Second):
+	}
+
+	req2, _ := gc.(*gossipChannel).createStateInfoRequest()
+	req2.GetStateInfoPullReq().Channel_MAC = utils.GenerateMAC(pkiIDInOrg1, utils.ChannelID{'a'})
+	invalidReceivedMsg2 := &receivedMsg{
+		msg:   req2,
+		pkiID: pkiIDInOrg1,
+	}
+	invalidReceivedMsg2.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(invalidReceivedMsg2)
+	select {
+	case <-gossipMessagesSentFromChannel:
+		require.Fail(t, "Should not reply to a request message, because the request message from a peer who is from a foreign org")
+	case <-time.After(time.Second):
+	}
+}
+
+func TestChannelIsInChannel(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, nil)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	require.False(t, gc.IsOrgInChannel(nil))
+	require.False(t, gc.IsOrgInChannel(orgNotInChannelA))
+	require.True(t, gc.IsOrgInChannel(orgInChannelA))
+	require.False(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	require.True(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+}
+
+func TestChannelIsSubscribed(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, nil)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{msg: createStateInfoMsg(10, pkiIDInOrg1, channelA), pkiID: pkiIDInOrg1})
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+}
+
+func TestChannelAddToMessageStore(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	demuxedMsgs := make(chan *utils.SignedGossipMessage, 1)
+
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, nil)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(args mock.Arguments) {
+		demuxedMsgs <- args.Get(0).(*utils.SignedGossipMessage)
+	})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(11, channelA), pkiID: pkiIDInOrg1})
+	select {
+	case <-demuxedMsgs:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't demultiplex a data msg within a timely manner")
+	}
+	gc.AddToMsgStore(createDataMsg(12, channelA))
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(12, channelA), pkiID: pkiIDInOrg1})
+	select {
+	case <-demuxedMsgs:
+		require.Fail(t, "Should not receive old data msg")
+	case <-time.After(time.Second):
+	}
+
+	gc.AddToMsgStore(createStateInfoMsg(10, pkiIDInOrg1, channelA))
+	helloMsg := createHelloMsg(pkiIDInOrg1)
+	responsedChan := make(chan struct{}, 1)
+	helloMsg.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		responsedChan <- struct{}{}
+	})
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-responsedChan:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't reply to a hello within a timely manner")
+	}
+	gc.HandleMessage(&receivedMsg{msg: createStateInfoMsg(10, pkiIDInOrg1, channelA), pkiID: pkiIDInOrg1})
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+}
+
+func TestChannelBlockExpiration(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	demuxedMsgs := make(chan *utils.SignedGossipMessage, 1)
+
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, nil)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(args mock.Arguments) {
+		demuxedMsgs <- args.Get(0).(*utils.SignedGossipMessage)
+	})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+
+	respondChan := make(chan *pgossip.GossipMessage, 1)
+	messageRelayer := func(args mock.Arguments) {
+		msg := args.Get(0).(*pgossip.GossipMessage)
+		respondChan <- msg
+	}
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
+	select {
+	case <-demuxedMsgs:
+	case <-time.After(time.Second):
+		require.Fail(t, "Haven't detected demultiplexing message")
+	}
+
+	helloMsg := createHelloMsg(pkiIDInOrg1)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-time.After(time.Second):
+	case <-respondChan:
+		require.Fail(t, "Shouldn't replied to hello message")
+	}
+
+	stateInfoMsg := createStateInfoMsg(10, pkiIDInOrg1, channelA)
+	gc.AddToMsgStore(stateInfoMsg)
+	helloMsg = createHelloMsg(pkiIDInOrg1)
+	helloMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-time.After(time.Second):
+		require.Fail(t, "Haven't replied to hello message")
+	case msg := <-respondChan:
+		if msg.GetDataDig() != nil {
+			require.Equal(t, "5", string(msg.GetDataDig().Digests[0]))
+		} else {
+			require.Fail(t, "Not correct pull msg type in response - expect digest")
+		}
+	}
+
+	time.Sleep(gc.(*gossipChannel).adapter.GetConf().BlockExpirationInterval + time.Second)
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
+	select {
+	case <-time.After(time.Second):
+	case <-demuxedMsgs:
+		require.Fail(t, "Shouldn't process the block")
+	}
+
+	// gc.AddToMsgStore(stateInfoMsg)
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-time.After(time.Second):
+	case <-respondChan:
+		require.Fail(t, "No digest should be sent")
+	}
+
+	time.Sleep(gc.(*gossipChannel).adapter.GetConf().BlockExpirationInterval + time.Second)
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
+	select {
+	case <-demuxedMsgs:
+	case <-time.After(time.Second):
+		require.Fail(t, "Haven't detected demultiplexing message")
+	}
+
+	gc.HandleMessage(helloMsg)
+	select {
+	case <-time.After(time.Second):
+		require.Fail(t, "Haven't replied to hello message")
+	case msg := <-respondChan:
+		if msg.GetDataDig() != nil {
+			require.Equal(t, "5", string(msg.GetDataDig().Digests[0]))
+		} else {
+			require.Fail(t, "Not correct pull msg type in response - expect digest")
+		}
+	}
+}
+
+func TestChannelBadBlocks(t *testing.T) {
+	receivedMessages := make(chan *utils.SignedGossipMessage, 1)
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	adapter := new(gossipAdapterMock)
+	members := utils.Members{}
+	members = append(members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	configureAdapter(adapter, members)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(args mock.Arguments) {
+		receivedMessages <- args.Get(0).(*utils.SignedGossipMessage)
+	})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(1, channelA), pkiID: pkiIDInOrg1})
+	require.Len(t, receivedMessages, 1)
+	<-receivedMessages
+
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(2, utils.ChannelID{'a'}), pkiID: pkiIDInOrg1})
+	require.Len(t, receivedMessages, 0)
+
+	dataMsg := createDataMsg(3, channelA)
+	dataMsg.GetDataMsg().Payload = nil
+	gc.HandleMessage(&receivedMsg{msg: dataMsg, pkiID: pkiIDInOrg1})
+	require.Len(t, receivedMessages, 0)
+
+	cs.Mock = mock.Mock{}
+	cs.On("VerifyBlock", mock.Anything).Return(errors.NewError("bad signature"))
+	gc.HandleMessage(&receivedMsg{msg: createDataMsg(4, channelA), pkiID: pkiIDInOrg1})
+	require.Len(t, receivedMessages, 0)
+}
+
+func TestNoGossipOrSigningWhenEmptyMembership(t *testing.T) {
+	var gossipedWG sync.WaitGroup
+	gossipedWG.Add(1)
+
+	var emptyMembership = utils.Members{}
+	var nonEmptyMembership = utils.Members{}
+	nonEmptyMembership = append(nonEmptyMembership, utils.NetworkMember{PKIid: pkiIDInOrg1})
+
+	var dynamicMembership atomic.Value
+	dynamicMembership.Store(nonEmptyMembership)
+
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+
+	conf := conf
+	conf.PublishStateInfoInterval = time.Second
+	conf.RequestStateInfoInterval = time.Hour
+	conf.TimeForMembershipTracker = time.Hour
+	adapter.On("GetConf").Return(conf)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1).Return(orgInChannelA)
+	adapter.On("Gossip", mock.Anything).Run(func(args mock.Arguments) {
+		gossipedWG.Done()
+	})
+	adapter.On("GetMembership").Return(func() utils.Members {
+		return dynamicMembership.Load().(utils.Members)
+	})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	require.Equal(t, uint32(1), atomic.LoadUint32(&adapter.signCallCount))
+	defer gc.Stop()
+	gc.UpdateLedgerHeight(1)
+	gossipedWG.Wait()
+	require.Equal(t, uint32(2), atomic.LoadUint32(&adapter.signCallCount))
+
+	dynamicMembership.Store(emptyMembership)
+	gc.UpdateLedgerHeight(2)
+	time.Sleep(conf.PublishStateInfoInterval * 3)
+	require.Equal(t, uint32(2), atomic.LoadUint32(&adapter.signCallCount))
+
+	require.Empty(t, gc.Self().GetStateInfo().Properties.Chaincodes)
+	gossipedWG.Add(1)
+	gc.UpdateChaincodes([]*pgossip.Chaincode{{Name: "mycc"}})
+	require.Equal(t, uint32(3), atomic.LoadUint32(&adapter.signCallCount))
+	require.Equal(t, "mycc", gc.Self().GetStateInfo().Properties.Chaincodes[0].Name)
+}
+
+func TestChannelPulledBadBlocks(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	adapter := new(gossipAdapterMock)
+	members := utils.Members{}
+	members = append(members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	configureAdapter(adapter, members)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	changeChan := func(envelope *pgossip.Envelope) {
+		sgm, _ := utils.EnvelopeToSignedGossipMessage(envelope)
+		sgm.Channel = utils.ChannelID("a")
+		sgm, _ = utils.NoopSign(sgm.GossipMessage)
+		envelope.Payload = sgm.Payload
+	}
+
+	pullPhase1 := simulatePullPhase(gc, t, &wg, changeChan, 10, 11)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(pullPhase1)
+	wg.Wait()
+	gc.Stop()
+	require.Equal(t, 0, gc.(*gossipChannel).blockMsgStore.Size())
+
+	cs = &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(errors.NewError("bad block"))
+	adapter = new(gossipAdapterMock)
+	configureAdapter(adapter, members)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	gc = NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	wg.Add(1)
+	noop := func(*pgossip.Envelope) {}
+	pullPhase2 := simulatePullPhase(gc, t, &wg, noop, 10, 11)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(pullPhase2)
+	wg.Wait()
+	gc.Stop()
+	require.Equal(t, 0, gc.(*gossipChannel).blockMsgStore.Size())
+
+	cs = &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(errors.NewError("bad block"))
+	adapter = new(gossipAdapterMock)
+	configureAdapter(adapter, members)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	gc = NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	wg.Add(1)
+	emptyBlock := func(envelope *pgossip.Envelope) {
+		sgm, _ := utils.EnvelopeToSignedGossipMessage(envelope)
+		sgm.GetDataMsg().Payload = nil
+		sgm, _ = utils.NoopSign(sgm.GossipMessage)
+		envelope.Payload = sgm.Envelope.Payload
+	}
+	pullPhase3 := simulatePullPhase(gc, t, &wg, emptyBlock, 10, 11)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(pullPhase3)
+	wg.Wait()
+	gc.Stop()
+	require.Equal(t, 0, gc.(*gossipChannel).blockMsgStore.Size())
+
+	cs = &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(errors.NewError("bad block"))
+	adapter = new(gossipAdapterMock)
+	configureAdapter(adapter, members)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	gc = NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	wg.Add(1)
+	nonBlockMsg := func(envelope *pgossip.Envelope) {
+		sgm, _ := utils.EnvelopeToSignedGossipMessage(envelope)
+		sgm.Content = createHelloMsg(pkiIDInOrg1).GetSignedGossipMessage().Content
+		sgm, _ = utils.NoopSign(sgm.GossipMessage)
+		envelope.Payload = sgm.Payload
+	}
+	pullPhase4 := simulatePullPhase(gc, t, &wg, nonBlockMsg, 10, 11)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(pullPhase4)
+	wg.Wait()
+	gc.Stop()
+	require.Equal(t, 0, gc.(*gossipChannel).blockMsgStore.Size())
+}
+
+func TestChannelStateInfoSnapshot(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+
+	adapter := new(gossipAdapterMock)
+	adapter.On("Lookup", mock.Anything).Return(&utils.NetworkMember{Endpoint: "localhost:5000"})
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("ValidateStateInfoMessage", mock.Anything).Return(nil)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	members := utils.Members{}
+	members = append(members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	configureAdapter(adapter, members)
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+
+	sentMessages := make(chan *pgossip.GossipMessage, 10)
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: stateInfoSnapshotForChannel(utils.ChannelID("a"), createStateInfoMsg(4, pkiIDInOrg1, channelA))})
+	require.Empty(t, gc.GetPeers())
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: stateInfoSnapshotForChannel(channelA, createStateInfoMsg(4, pkiIDInOrg1, utils.ChannelID("a")))})
+	require.Empty(t, gc.GetPeers())
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: stateInfoSnapshotForChannel(channelA, createStateInfoMsg(4, pkiIDInOrg2, channelA))})
+	require.Empty(t, gc.GetPeers())
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg2, msg: stateInfoSnapshotForChannel(channelA, createStateInfoMsg(4, pkiIDInOrg1, channelA))})
+	require.Empty(t, gc.GetPeers())
+
+	stateInfoMsg := createStateInfoMsg(4, pkiIDInOrg1, channelA)
+	stateInfoMsg.GetStateInfo().Channel_MAC = append(stateInfoMsg.GetStateInfo().Channel_MAC, 1)
+	stateInfoMsg, _ = utils.NoopSign(stateInfoMsg.GossipMessage)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: stateInfoSnapshotForChannel(channelA, stateInfoMsg)})
+	require.Empty(t, gc.GetPeers())
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: stateInfoSnapshotForChannel(channelA, createStateInfoMsg(4, pkiIDInOrg1, channelA))})
+	require.NotEmpty(t, gc.GetPeers())
+	require.Equal(t, 4, int(gc.GetPeers()[0].Properties.LedgerHeight))
+
+	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
+		Channel: channelA,
+		Content: &pgossip.GossipMessage_StateInfoPullReq{
+			StateInfoPullReq: &pgossip.StateInfoPullRequest{
+				Channel_MAC: append(utils.GenerateMAC(pkiIDInOrg1, channelA), 1),
+			},
+		},
+	})
+	snapshotReq := &receivedMsg{
+		pkiID: pkiIDInOrg1,
+		msg:   sgm,
+	}
+	snapshotReq.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		sentMessages <- args.Get(0).(*pgossip.GossipMessage)
+	})
+
+	go gc.HandleMessage(snapshotReq)
+	select {
+	case <-sentMessages:
+		require.Fail(t, "Shouldn't reply to an uncorrect request with invalid channel_mac")
+	case <-time.After(time.Second):
+	}
+
+	sgm, _ = utils.NoopSign(&pgossip.GossipMessage{
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
+		Channel: channelA,
+		Content: &pgossip.GossipMessage_StateInfoPullReq{
+			StateInfoPullReq: &pgossip.StateInfoPullRequest{
+				Channel_MAC: utils.GenerateMAC(pkiIDInOrg1, channelA),
+			},
+		},
+	})
+	snapshotReq = &receivedMsg{
+		pkiID: pkiIDInOrg1,
+		msg:   sgm,
+	}
+	snapshotReq.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		sentMessages <- args.Get(0).(*pgossip.GossipMessage)
+	})
+
+	go gc.HandleMessage(snapshotReq)
+	select {
+	case msg := <-sentMessages:
+		elements := msg.GetStateInfoSnapshot().Elements
+		require.Len(t, elements, 1)
+		signedMsg, err := utils.EnvelopeToSignedGossipMessage(elements[0])
+		require.NoError(t, err)
+		require.Equal(t, 4, int(signedMsg.GetStateInfo().Properties.LedgerHeight))
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't reply to a request within a timely manner")
+	}
+
+	invalidStateInfoSnapshot := stateInfoSnapshotForChannel(channelA, createStateInfoMsg(4, pkiIDInOrg1, channelA))
+	invalidStateInfoSnapshot.GetStateInfoSnapshot().Elements = []*pgossip.Envelope{createHelloMsg(pkiIDInOrg1).GetSourceEnvelope()}
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: invalidStateInfoSnapshot})
+
+	invalidStateInfoSnapshot = stateInfoSnapshotForChannel(channelA, createStateInfoMsg(4, utils.PKIidType("unknown"), channelA))
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: invalidStateInfoSnapshot})
+}
+
+func TestInterOrgExternalEndpointDisclosure(t *testing.T) {
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+	pkiID1 := utils.PKIidType("withExternalEndpoint")
+	pkiID2 := utils.PKIidType("noExternalEndpoint")
+	pkiID3 := utils.PKIidType("pkiIDInOrg2")
+	adapter.On("Lookup", pkiID1).Return(&utils.NetworkMember{Endpoint: "localhost:5000"})
+	adapter.On("Lookup", pkiID2).Return(&utils.NetworkMember{})
+	adapter.On("Lookup", pkiID3).Return(&utils.NetworkMember{})
+	adapter.On("GetOrgOfPeer", pkiID1).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiID2).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiID3).Return(utils.OrgIdentityType("ORG2"))
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+	configureAdapter(adapter, nil)
+	joinMsg := &joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			orgInChannelA.String(): {},
+			"ORG2":                 {},
+		},
+	}
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, joinMsg, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiID1, msg: createStateInfoMsg(0, pkiID1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiID2, msg: createStateInfoMsg(0, pkiID2, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiID3, msg: createStateInfoMsg(0, pkiID3, channelA)})
+
+	sentMessages := make(chan *pgossip.GossipMessage, 10)
+	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
+		Tag: pgossip.GossipMessage_CHAN_OR_ORG,
+		Channel: channelA,
+		Content: &pgossip.GossipMessage_StateInfoPullReq{
+			StateInfoPullReq: &pgossip.StateInfoPullRequest{
+				Channel_MAC: utils.GenerateMAC(pkiID3, channelA),
+			},
+		},
+	})
+	req := &receivedMsg{
+		pkiID: pkiID3,
+		msg: sgm,
+	}
+	req.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		sentMessages <- args.Get(0).(*pgossip.GossipMessage)
+	})
+
+	go gc.HandleMessage(req)
+	select {
+	case <-time.After(time.Second):
+		require.Fail(t, "Should respond to req msg in time")
+	case msg := <-sentMessages:
+		elements := msg.GetStateInfoSnapshot().Elements
+		require.Len(t, elements, 2)
+		m1, _ := utils.EnvelopeToSignedGossipMessage(elements[0])
+		m2, _ := utils.EnvelopeToSignedGossipMessage(elements[1])
+		pkiIDs := [][]byte{pkiID1, pkiID3}
+		require.Contains(t, pkiIDs, m1.GetStateInfo().PkiId)
+		require.Contains(t, pkiIDs, m2.GetStateInfo().PkiId)
+	}
+
+	sgm, _ = utils.NoopSign(&pgossip.GossipMessage{
+		Tag: pgossip.GossipMessage_CHAN_OR_ORG,
+		Channel: channelA,
+		Content: &pgossip.GossipMessage_StateInfoPullReq{
+			StateInfoPullReq: &pgossip.StateInfoPullRequest{
+				Channel_MAC: utils.GenerateMAC(pkiID2, channelA),
+			},
+		},
+	})
+	req = &receivedMsg{
+		pkiID: pkiID2,
+		msg: sgm,
+	}
+	req.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
+		sentMessages <- args.Get(0).(*pgossip.GossipMessage)
+	})
+	go gc.HandleMessage(req)
+	select {
+	case <-time.After(time.Second):
+		require.Fail(t, "Should respond to req msg in time")
+	case msg := <-sentMessages:
+		elements := msg.GetStateInfoSnapshot().Elements
+		require.Len(t, elements, 3)
+		m1, _ := utils.EnvelopeToSignedGossipMessage(elements[0])
+		m2, _ := utils.EnvelopeToSignedGossipMessage(elements[1])
+		m3, _ := utils.EnvelopeToSignedGossipMessage(elements[2])
+		pkiIDs := [][]byte{pkiID1, pkiID2, pkiID3}
+		require.Contains(t, pkiIDs, m1.GetStateInfo().PkiId)
+		require.Contains(t, pkiIDs, m2.GetStateInfo().PkiId)
+		require.Contains(t, pkiIDs, m3.GetStateInfo().PkiId)
+	}
+}
+
+func TestChannelStop(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	adapter := new(gossipAdapterMock)
+	var sentCount int32
+	members := utils.Members{}
+	members = append(members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	configureAdapter(adapter, members)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		atomic.AddInt32(&sentCount, 1)
+	})
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	time.Sleep(time.Second)
+	gc.Stop()
+	oldCount := atomic.LoadInt32(&sentCount)
+	t1 := time.Now()
+	for {
+		if time.Since(t1).Nanoseconds() > (time.Second * 15).Nanoseconds() {
+			require.Fail(t, "Channel stop failed")
+		}
+		time.Sleep(time.Second)
+		newCount := atomic.LoadInt32(&sentCount)
+		if newCount == oldCount {
+			break
+		}
+		oldCount = newCount
 	}
 }

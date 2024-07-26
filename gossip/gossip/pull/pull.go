@@ -235,7 +235,11 @@ func (pm *pullMediator) Hello(endpoint string, nonce uint64) {
 		pm.logger.Errorf("Failed creating signed Hello message: %s.", err.Error())
 		return
 	}
-	pm.logger.Debugf("Send %s hello message with nonce %d to %s.", pm.config.MsgType, nonce, endpoint)
+	var object string
+	if len(endpoint) == 0 {
+		object = "unknown peer"
+	}
+	pm.logger.Debugf("Send %s hello message with nonce %d to %s.", pm.config.MsgType, nonce, object)
 	pm.Sender.Send(sgm, pm.peersWithEndpoints(endpoint)...)
 }
 
@@ -275,7 +279,7 @@ func (pm *pullMediator) SendReq(endpoint string, items []string, nonce uint64) {
 		return
 	}
 	remotePeer := pm.peersWithEndpoints(endpoint)[0]
-	pm.logger.Debugf("Send %s request message %s to %s@%s.", pm.config.MsgType, utils.DataRequestToString(reqMsg.GetDataReq()), remotePeer.PKIID.String(), remotePeer.Endpoint)
+	pm.logger.Debugf("Send %s request %s to %s@%s.", pm.config.MsgType, utils.DataRequestToString(reqMsg.GetDataReq()), remotePeer.PKIID.String(), remotePeer.Endpoint)
 	pm.Sender.Send(sgm, remotePeer)
 }
 
