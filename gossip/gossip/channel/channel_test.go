@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -1442,7 +1443,7 @@ func TestInterOrgExternalEndpointDisclosure(t *testing.T) {
 
 	sentMessages := make(chan *pgossip.GossipMessage, 10)
 	sgm, _ := utils.NoopSign(&pgossip.GossipMessage{
-		Tag: pgossip.GossipMessage_CHAN_OR_ORG,
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
 		Channel: channelA,
 		Content: &pgossip.GossipMessage_StateInfoPullReq{
 			StateInfoPullReq: &pgossip.StateInfoPullRequest{
@@ -1452,7 +1453,7 @@ func TestInterOrgExternalEndpointDisclosure(t *testing.T) {
 	})
 	req := &receivedMsg{
 		pkiID: pkiID3,
-		msg: sgm,
+		msg:   sgm,
 	}
 	req.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
 		sentMessages <- args.Get(0).(*pgossip.GossipMessage)
@@ -1473,7 +1474,7 @@ func TestInterOrgExternalEndpointDisclosure(t *testing.T) {
 	}
 
 	sgm, _ = utils.NoopSign(&pgossip.GossipMessage{
-		Tag: pgossip.GossipMessage_CHAN_OR_ORG,
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
 		Channel: channelA,
 		Content: &pgossip.GossipMessage_StateInfoPullReq{
 			StateInfoPullReq: &pgossip.StateInfoPullRequest{
@@ -1483,7 +1484,7 @@ func TestInterOrgExternalEndpointDisclosure(t *testing.T) {
 	})
 	req = &receivedMsg{
 		pkiID: pkiID2,
-		msg: sgm,
+		msg:   sgm,
 	}
 	req.On("Respond", mock.Anything).Run(func(args mock.Arguments) {
 		sentMessages <- args.Get(0).(*pgossip.GossipMessage)
@@ -1533,3 +1534,688 @@ func TestChannelStop(t *testing.T) {
 		oldCount = newCount
 	}
 }
+
+func TestChannelReconfigureChannel(t *testing.T) {
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+	members := utils.Members{}
+	members = append(members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	configureAdapter(adapter, members)
+	adapter.On("GetConf").Return(conf)
+	adapter.On("GetMembership").Return([]utils.NetworkMember{})
+	adapter.On("OrgByPeerIdentity", utils.PeerIdentityType(orgInChannelA)).Return(orgInChannelA)
+	adapter.On("OrgByPeerIdentity", utils.PeerIdentityType(orgNotInChannelA)).Return(orgNotInChannelA)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg2).Return(orgNotInChannelA)
+
+	outdatedJoinChanMsg := &joinChanMsg{
+		getTS: func() time.Time {
+			return time.Now()
+		},
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(orgNotInChannelA): {},
+		},
+	}
+
+	newJoinChanMsg := &joinChanMsg{
+		getTS: func() time.Time {
+			return time.Now().Add(time.Millisecond * 100)
+		},
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(orgInChannelA): {},
+		},
+	}
+
+	updatedJoinChanMsg := &joinChanMsg{
+		getTS: func() time.Time {
+			return time.Now().Add(time.Millisecond * 200)
+		},
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(orgNotInChannelA): {},
+		},
+	}
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, newJoinChanMsg, disabledMetrics, logger)
+
+	gc.ConfigureChannel(newJoinChanMsg)
+
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+
+	require.True(t, gc.IsOrgInChannel(orgInChannelA))
+	require.False(t, gc.IsOrgInChannel(orgNotInChannelA))
+	require.True(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.False(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+
+	gc.ConfigureChannel(outdatedJoinChanMsg)
+	require.True(t, gc.IsOrgInChannel(orgInChannelA))
+	require.False(t, gc.IsOrgInChannel(orgNotInChannelA))
+	require.True(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.False(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+
+	gc.ConfigureChannel(updatedJoinChanMsg)
+	gc.ConfigureChannel(updatedJoinChanMsg)
+	require.False(t, gc.IsOrgInChannel(orgInChannelA))
+	require.True(t, gc.IsOrgInChannel(orgNotInChannelA))
+	require.False(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.True(t, gc.IsMemberInChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+
+	sgm, _ := gc.(*gossipChannel).createStateInfoRequest()
+	invalidReceivedMsg := &receivedMsg{
+		msg:   sgm,
+		pkiID: pkiIDInOrg1,
+	}
+	gossipMessagesSentFromChannel := make(chan *pgossip.GossipMessage, 1)
+	messageRelayer := func(arg mock.Arguments) {
+		msg := arg.Get(0).(*pgossip.GossipMessage)
+		gossipMessagesSentFromChannel <- msg
+	}
+	invalidReceivedMsg.On("Respond", mock.Anything).Run(messageRelayer)
+	gc.HandleMessage(invalidReceivedMsg)
+	select {
+	case <-gossipMessagesSentFromChannel:
+		t.Fatal("Responded with digest, but shouldn't have since peer is in ORG2 and its not in the channel")
+	case <-time.After(time.Second * 1):
+	}
+}
+
+func TestChannelNoAnchorPeers(t *testing.T) {
+	// Scenario: We got a join channel message with no anchor peers
+	// In this case, we should be in the channel
+
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+	members := utils.Members{}
+	members = append(members, utils.NetworkMember{PKIid: pkiIDInOrg1})
+	configureAdapter(adapter, members)
+
+	adapter.On("GetConf").Return(conf)
+	adapter.On("GetMembership").Return([]utils.NetworkMember{})
+	adapter.On("OrgByPeerIdentity", utils.PeerIdentityType(orgInChannelA)).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg2).Return(orgNotInChannelA)
+
+	jcm := &joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(orgInChannelA): {},
+		},
+	}
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, utils.JoinChannelMessage(jcm), disabledMetrics, logger)
+	require.True(t, gc.IsOrgInChannel(orgInChannelA))
+}
+
+func TestGossipChannelEligibility(t *testing.T) {
+	// Scenario: We have a peer in an org that joins a channel with org1 and org2.
+	// and it receives StateInfo messages of other peers and the eligibility
+	// of these peers of being in the channel is checked.
+	// During the test, the channel is reconfigured, and the expiration
+	// of the peer identities is simulated.
+
+	cs := &cryptoService{}
+	selfPKIID := utils.PKIidType("p")
+	adapter := new(gossipAdapterMock)
+	pkiIDinOrg3 := utils.PKIidType("pkiIDinOrg3")
+	members := utils.Members{}
+	members = append(members, []utils.NetworkMember{
+		{PKIid: pkiIDInOrg1},
+		{PKIid: pkiIDInOrg1ButNotEligible},
+		{PKIid: pkiIDInOrg2},
+		{PKIid: pkiIDinOrg3},
+	}...)
+	adapter.On("GetMembership").Return(members)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("GetConf").Return(conf)
+
+	// At first, all peers are in the channel except pkiIDinOrg3
+	org1 := utils.OrgIdentityType("ORG1")
+	org2 := utils.OrgIdentityType("ORG2")
+	org3 := utils.OrgIdentityType("ORG3")
+
+	adapter.On("GetOrgOfPeer", selfPKIID).Return(org1)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1).Return(org1)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg2).Return(org2)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1ButNotEligible).Return(org1)
+	adapter.On("GetOrgOfPeer", pkiIDinOrg3).Return(org3)
+
+	gc := NewGossipChannel(selfPKIID, orgInChannelA, cs, channelA, adapter, &joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(org1): {},
+			string(org2): {},
+		},
+	}, disabledMetrics, logger)
+	// Every peer sends a StateInfo message
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg2, msg: createStateInfoMsg(1, pkiIDInOrg2, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1ButNotEligible, msg: createStateInfoMsg(1, pkiIDInOrg1ButNotEligible, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDinOrg3, msg: createStateInfoMsg(1, pkiIDinOrg3, channelA)})
+
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1ButNotEligible}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDinOrg3}))
+
+	// Ensure peers from the channel are returned
+	require.True(t, gc.PeerFilter(func(signature utils.PeerSignature) bool {
+		return true
+	})(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.True(t, gc.PeerFilter(func(signature utils.PeerSignature) bool {
+		return true
+	})(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	// But not peers which aren't in the channel
+	require.False(t, gc.PeerFilter(func(signature utils.PeerSignature) bool {
+		return true
+	})(utils.NetworkMember{PKIid: pkiIDinOrg3}))
+
+	// Ensure the given predicate is considered
+	require.True(t, gc.PeerFilter(func(signature utils.PeerSignature) bool {
+		return bytes.Equal(signature.PeerIdentity, []byte("pkiIDInOrg2"))
+	})(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+
+	require.False(t, gc.PeerFilter(func(signature utils.PeerSignature) bool {
+		return bytes.Equal(signature.PeerIdentity, []byte("pkiIDinOrg2"))
+	})(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+
+	// Remove org2 from the channel
+	gc.ConfigureChannel(&joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(org1): {},
+		},
+	})
+
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1ButNotEligible}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDinOrg3}))
+
+	// Now simulate a config update that removed pkiIDInOrg1ButNotEligible from the channel readers
+	cs.mocked = true
+	cs.On("VerifyByChannel", utils.PeerIdentityType(pkiIDInOrg1ButNotEligible)).Return(errors.NewError("Not a channel reader"))
+	cs.On("VerifyByChannel", mock.Anything).Return(nil)
+	gc.ConfigureChannel(&joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(org1): {},
+		},
+	})
+	require.True(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1ButNotEligible}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDinOrg3}))
+
+	// Now Simulate a certificate expiration of pkiIDInOrg1.
+	// This is done by asking the adapter to lookup the identity by PKI-ID, but if the certificate
+	// is expired, the mapping is deleted and hence the lookup yields nothing.
+	adapter.On("GetIdentityByPKIID", pkiIDInOrg1).Return(utils.PeerIdentityType(nil))
+	adapter.On("GetIdentityByPKIID", pkiIDInOrg2).Return(utils.PeerIdentityType(pkiIDInOrg2))
+	adapter.On("GetIdentityByPKIID", pkiIDInOrg1ButNotEligible).Return(utils.PeerIdentityType(pkiIDInOrg1ButNotEligible))
+	adapter.On("GetIdentityByPKIID", pkiIDinOrg3).Return(utils.PeerIdentityType(pkiIDinOrg3))
+
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1ButNotEligible}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDinOrg3}))
+
+	// Now make another update of StateInfo messages, this time with updated ledger height (to overwrite earlier messages)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(2, pkiIDInOrg1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(2, pkiIDInOrg2, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(2, pkiIDInOrg1ButNotEligible, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(2, pkiIDinOrg3, channelA)})
+
+	// Ensure the access control resolution hasn't changed
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg2}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDInOrg1ButNotEligible}))
+	require.False(t, gc.ShouldGetBlocksForThisChannel(utils.NetworkMember{PKIid: pkiIDinOrg3}))
+}
+
+func TestChannelGetPeers(t *testing.T) {
+	// Scenario: We have a peer in an org, and the peer is notified that several peers
+	// exist, and some of them:
+	// (1) Join its channel, and are eligible for receiving blocks.
+	// (2) Join its channel, but are not eligible for receiving blocks (MSP doesn't allow this).
+	// (3) Say they join its channel, but are actually from an org that is not in the channel.
+	// The GetPeers query should only return peers that belong to the first group.
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+	members := utils.Members{}
+	members = append(members, []utils.NetworkMember{
+		{PKIid: pkiIDInOrg1},
+		{PKIid: pkiIDInOrg1ButNotEligible},
+		{PKIid: pkiIDInOrg2},
+	}...)
+	configureAdapter(adapter, members)
+	gc := NewGossipChannel(utils.PKIidType("p0"), orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg2, channelA)})
+	require.Len(t, gc.GetPeers(), 1)
+	require.Equal(t, pkiIDInOrg1, gc.GetPeers()[0].PKIid)
+
+	// Ensure envelope from GetPeers is valid
+	gMsg, _ := utils.EnvelopeToSignedGossipMessage(gc.GetPeers()[0].Envelope)
+	require.Equal(t, []byte(pkiIDInOrg1), gMsg.GetStateInfo().PkiId)
+
+	gc.HandleMessage(&receivedMsg{msg: createStateInfoMsg(10, pkiIDInOrg1ButNotEligible, channelA), pkiID: pkiIDInOrg1ButNotEligible})
+	cs.On("VerifyByChannel", mock.Anything).Return(errors.NewError("Not eligible"))
+	cs.mocked = true
+	// Simulate a config update
+	gc.ConfigureChannel(&joinChanMsg{})
+	require.Len(t, gc.GetPeers(), 0)
+
+	// Now recreate gc and corrupt the MAC
+	// and ensure that the StateInfo message doesn't count
+	gc = NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	msg := &receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)}
+	msg.GetSignedGossipMessage().GetStateInfo().Channel_MAC = utils.GenerateMAC(pkiIDInOrg2, channelA)
+	gc.HandleMessage(msg)
+	require.Len(t, gc.GetPeers(), 0)
+}
+
+func TestOnDemandGossip(t *testing.T) {
+	// Scenario: update the metadata and ensure only 1 dissemination
+	// takes place when membership is not empty
+	peerA := utils.NetworkMember{
+		PKIid:            pkiIDInOrg1,
+		Endpoint:         "a",
+		InternalEndpoint: "a",
+	}
+	members := utils.Members{}
+	members = append(members, peerA)
+
+	cs := &cryptoService{}
+
+	adapter := new(gossipAdapterMock)
+	configureAdapter(adapter, members)
+
+	adapter.ExpectedCalls = append(adapter.ExpectedCalls[:1], adapter.ExpectedCalls[2:]...)
+	var lock sync.RWMutex
+	var membershipKnown bool
+	adapter.On("GetMembership").Return(func() utils.Members {
+		lock.RLock()
+		defer lock.RUnlock()
+		if !membershipKnown {
+			return []utils.NetworkMember{}
+		}
+		return []utils.NetworkMember{{}}
+	})
+
+	gossipedEvents := make(chan struct{})
+
+	conf := conf
+	conf.PublishStateInfoInterval = time.Millisecond * 200
+	adapter.On("GetConf").Return(conf)
+	adapter.On("Gossip", mock.Anything).Run(func(mock.Arguments) {
+		lock.Lock()
+		defer lock.Unlock()
+		gossipedEvents <- struct{}{}
+	})
+	adapter.On("Forward", mock.Anything)
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	defer gc.Stop()
+	select {
+	case <-gossipedEvents:
+		require.Fail(t, "Should not have gossiped because metadata has not been updated yet")
+	case <-time.After(time.Millisecond * 500):
+	}
+
+	gc.UpdateLedgerHeight(1)
+	lock.Lock()
+	membershipKnown = true
+	lock.Unlock()
+
+	select {
+	case <-gossipedEvents:
+	case <-time.After(time.Second):
+		require.Fail(t, "Didn't gossip within a timely manner")
+	}
+	gc.UpdateLedgerHeight(2)
+	adapter.On("Gossip", mock.Anything).Run(func(mock.Arguments) {
+		gossipedEvents <- struct{}{}
+	})
+	adapter.On("Forward", mock.Anything)
+	gc.(*gossipChannel).adapter = adapter
+	select {
+	case <-gossipedEvents:
+	case <-time.After(time.Second):
+		require.Fail(t, "Should have gossiped a third time")
+	}
+	select {
+	case <-gossipedEvents:
+		require.Fail(t, "Should not have gossiped a fourth time, because dirty flag should have been turned off")
+	case <-time.After(time.Millisecond * 500):
+	}
+	gc.UpdateLedgerHeight(3)
+	select {
+	case <-gossipedEvents:
+	case <-time.After(time.Second):
+		require.Fail(t, "Should have gossiped a block now, because got a new StateInfo message")
+	}
+}
+
+func TestChannelPullWithDigestsFilter(t *testing.T) {
+	cs := &cryptoService{}
+	cs.On("VerifyBlock", mock.Anything).Return(nil)
+	receivedBlocksChan := make(chan *utils.SignedGossipMessage, 2)
+	adapter := new(gossipAdapterMock)
+	members := utils.Members{utils.NetworkMember{PKIid: pkiIDInOrg1}}
+	configureAdapter(adapter, members)
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(arg mock.Arguments) {
+		msg := arg.Get(0).(*utils.SignedGossipMessage)
+		if msg.GetDataMsg() == nil {
+			return
+		}
+		// The peer is supposed to de-multiplex 1 ledger block
+		require.True(t, msg.GetDataMsg() != nil)
+		receivedBlocksChan <- msg
+	})
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics, logger)
+	go gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(100, pkiIDInOrg1, channelA)})
+
+	gc.UpdateLedgerHeight(11)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	pullPhase := simulatePullPhaseWithVariableDigest(gc, t, &wg, func(envelope *pgossip.Envelope) {}, [][]byte{[]byte("10"), []byte("11")}, []string{"11"}, 11)
+	adapter.On("Send", mock.Anything, mock.Anything).Run(pullPhase)
+	wg.Wait()
+
+	select {
+	case <-time.After(time.Second * 5):
+		t.Fatal("Haven't received blocks on time")
+	case msg := <-receivedBlocksChan:
+		require.Equal(t, uint64(11), msg.GetDataMsg().Payload.SeqNum)
+	}
+}
+
+func TestFilterForeignOrgLeadershipMessages(t *testing.T) {
+	org1 := utils.OrgIdentityType("org1")
+	org2 := utils.OrgIdentityType("org2")
+
+	p1 := utils.PKIidType("p1")
+	p2 := utils.PKIidType("p2")
+
+	cs := &cryptoService{}
+	adapter := &gossipAdapterMock{}
+
+	relayedLeadershipMsgs := make(chan interface{}, 2)
+
+	adapter.On("GetOrgOfPeer", p1).Return(org1)
+	adapter.On("GetOrgOfPeer", p2).Return(org2)
+
+	adapter.On("GetMembership").Return(utils.Members{})
+	adapter.On("GetConf").Return(conf)
+	adapter.On("DeMultiplex", mock.Anything).Run(func(args mock.Arguments) {
+		relayedLeadershipMsgs <- args.Get(0)
+	})
+
+	joinMsg := &joinChanMsg{
+		orgs2AnchorPeers: map[string][]utils.AnchorPeer{
+			string(org1): {},
+			string(org2): {},
+		},
+	}
+
+	gc := NewGossipChannel(pkiIDInOrg1, org1, cs, channelA, adapter, joinMsg, disabledMetrics, logger)
+
+	leadershipMsg := func(sender utils.PKIidType, creator utils.PKIidType) utils.ReceivedMessage {
+		return &receivedMsg{
+			pkiID: sender,
+			msg: &utils.SignedGossipMessage{
+				GossipMessage: &pgossip.GossipMessage{
+					Channel: channelA,
+					Tag:     pgossip.GossipMessage_CHAN_AND_ORG,
+					Content: &pgossip.GossipMessage_LeadershipMsg{
+						LeadershipMsg: &pgossip.LeadershipMessage{
+							PkiId: creator,
+							Timestamp: &pgossip.PeerTime{
+								SeqNum: 1,
+								IncNum: 1,
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	gc.HandleMessage(leadershipMsg(p1, p1))
+	require.Len(t, relayedLeadershipMsgs, 1, "should have relayed a message from p1 (same org)")
+
+	gc.HandleMessage(leadershipMsg(p2, p1))
+	require.Len(t, relayedLeadershipMsgs, 1, "should not have relayed a message from p2 (foreign org)")
+
+	gc.HandleMessage(leadershipMsg(p1, p2))
+	require.Len(t, relayedLeadershipMsgs, 1, "should not have relayed a message from p2 (foreign org)")
+}
+
+func TestChangesInPeers(t *testing.T) {
+	// TestChangesInPeers tracks after offline and online peers in channel
+	// Scenario1: no new peers - list of peers stays with no change
+	// Scenario2: new peer was added - old peers stay with no change
+	// Scenario3: new peer was added - one old peer was deleted
+	// Scenario4: new peer was added - one old peer hasn't been changed
+	// Scenario5: new peer was added and there were no other peers before
+	// Scenario6: a peer was deleted and no new peers were added
+	// Scenario7: one peer was deleted and all other peers stayed with no change
+	type testCase struct {
+		name           string
+		oldMembers     map[string]struct{}
+		newMembers     map[string]struct{}
+		expected       []string
+		entryInChannel func(chan string)
+		expectedTotal  float64
+	}
+	cases := []testCase{
+		{
+			name:       "noChanges",
+			oldMembers: map[string]struct{}{"pkiID11": {}, "pkiID22": {}, "pkiID33": {}},
+			newMembers: map[string]struct{}{"pkiID11": {}, "pkiID22": {}, "pkiID33": {}},
+			expected:   []string{""},
+			entryInChannel: func(chStr chan string) {
+				chStr <- ""
+			},
+			expectedTotal: 3,
+		},
+		{
+			name:       "newPeerWasAdded",
+			oldMembers: map[string]struct{}{"pkiID1": {}},
+			newMembers: map[string]struct{}{"pkiID1": {}, "pkiID3": {}},
+			expected: []string{
+				"Membership view has changed. peers went online: [[pkiID3]], current view: [[pkiID1] [pkiID3]]",
+				"Membership view has changed. peers went online: [[pkiID3]], current view: [[pkiID3] [pkiID1]]",
+			},
+			entryInChannel: func(chStr chan string) {},
+			expectedTotal:  2,
+		},
+		{
+			name:       "newPeerAddedOldPeerDeleted",
+			oldMembers: map[string]struct{}{"pkiID1": {}, "pkiID2": {}},
+			newMembers: map[string]struct{}{"pkiID1": {}, "pkiID3": {}},
+			expected: []string{
+				"Membership view has changed. peers went offline: [[pkiID2]], peers went online: [[pkiID3]], current view: [[pkiID1] [pkiID3]]",
+				"Membership view has changed. peers went offline: [[pkiID2]], peers went online: [[pkiID3]], current view: [[pkiID3] [pkiID1]]",
+			},
+			entryInChannel: func(chStr chan string) {},
+			expectedTotal:  2,
+		},
+		{
+			name:       "newPeersAddedOldPeerStayed",
+			oldMembers: map[string]struct{}{"pkiID1": {}},
+			newMembers: map[string]struct{}{"pkiID2": {}},
+			expected: []string{
+				"Membership view has changed. peers went offline: [[pkiID1]], peers went online: [[pkiID2]], current view: [[pkiID2]]",
+				"Membership view has changed. peers went offline: [[pkiID1]], peers went online: [[pkiID2]], current view: [[pkiID2]]",
+			},
+			entryInChannel: func(chStr chan string) {},
+			expectedTotal:  1,
+		},
+		{
+			name:           "newPeersAddedNoOldPeers",
+			oldMembers:     map[string]struct{}{},
+			newMembers:     map[string]struct{}{"pkiID1": {}},
+			expected:       []string{"Membership view has changed. peers went online: [[pkiID1]], current view: [[pkiID1]]"},
+			entryInChannel: func(chStr chan string) {},
+			expectedTotal:  1,
+		},
+		{
+			name:           "PeerWasDeletedNoNewPeers",
+			oldMembers:     map[string]struct{}{"pkiID1": {}},
+			newMembers:     map[string]struct{}{},
+			expected:       []string{"Membership view has changed. peers went offline: [[pkiID1]], current view: []"},
+			entryInChannel: func(chStr chan string) {},
+			expectedTotal:  0,
+		},
+		{
+			name:       "onePeerWasDeletedRestStayed",
+			oldMembers: map[string]struct{}{"pkiID01": {}, "pkiID02": {}, "pkiID03": {}},
+			newMembers: map[string]struct{}{"pkiID01": {}, "pkiID02": {}},
+			expected: []string{
+				"Membership view has changed. peers went offline: [[pkiID03]], current view: [[pkiID01] [pkiID02]]",
+				"Membership view has changed. peers went offline: [[pkiID03]], current view: [[pkiID02] [pkiID01]]",
+			},
+			entryInChannel: func(chStr chan string) {},
+			expectedTotal:  2,
+		},
+	}
+
+	for _, test := range cases {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			tickChan := make(chan time.Time)
+
+			buildMembers := func(rangeMembers map[string]struct{}) []utils.NetworkMember {
+				var members []utils.NetworkMember
+				for peerID := range rangeMembers {
+					peer := utils.NetworkMember{
+						Endpoint:         peerID,
+						InternalEndpoint: peerID,
+					}
+					peer.PKIid = utils.PKIidType(peerID)
+					members = append(members, peer)
+				}
+				return members
+			}
+
+			stopChan := make(chan struct{})
+
+			getPeersToTrackCallCount := 0
+			getListOfPeers := func() utils.Members {
+				var members []utils.NetworkMember
+				if getPeersToTrackCallCount == 0 {
+					members = buildMembers(test.oldMembers)
+					getPeersToTrackCallCount++
+				} else if getPeersToTrackCallCount == 1 {
+					members = buildMembers(test.newMembers)
+					getPeersToTrackCallCount++
+					close(stopChan) // no more ticks, stop tracking changes
+				} else {
+					t.Fatal("getPeersToTrack called too many times")
+				}
+				return members
+			}
+
+			mt := &membershipTracker{
+				getPeersToTrack: getListOfPeers,
+				report:          logger.Infof,
+				stopChan:        stopChan,
+				tickerC:   tickChan,
+				metrics:         disabledMetrics,
+				channelID:         utils.ChannelID("test"),
+			}
+
+			wgMT := sync.WaitGroup{}
+			wgMT.Add(1)
+			go func() {
+				mt.trackMembershipChanges()
+				wgMT.Done()
+			}()
+
+			tickChan <- time.Time{}
+
+
+			// mt needs to have received a tick before it was closed
+			wgMT.Wait()
+		})
+	}
+}
+
+func TestMembershiptrackerStopWhenGCStops(t *testing.T) {
+	// membershipTracker is invoked when gossip channel starts
+	// membershipTracker, as long as gossip channel was not stopped, has printed the right thing
+	// membershipTracker does not print after gossip channel was stopped
+	// membershipTracker stops running after gossip channel was stopped
+	cs := &cryptoService{}
+	pkiID1 := utils.PKIidType("1")
+	adapter := new(gossipAdapterMock)
+
+	jcm := &joinChanMsg{}
+
+	peerA := utils.NetworkMember{
+		PKIid:            pkiIDInOrg1,
+		Endpoint:         "a",
+		InternalEndpoint: "a",
+	}
+	peerB := utils.NetworkMember{
+		PKIid:            pkiIDInOrg2,
+		Endpoint:         "b",
+		InternalEndpoint: "b",
+	}
+
+	conf := conf
+	conf.RequestStateInfoInterval = time.Hour
+	conf.PullInterval = time.Hour
+	conf.TimeForMembershipTracker = time.Millisecond * 10
+
+	adapter.On("Gossip", mock.Anything)
+	adapter.On("Forward", mock.Anything)
+	adapter.On("Send", mock.Anything, mock.Anything)
+	adapter.On("DeMultiplex", mock.Anything)
+	adapter.On("GetConf").Return(conf)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg2).Return(orgInChannelA)
+	adapter.On("GetOrgOfPeer", mock.Anything).Return(utils.OrgIdentityType(nil))
+
+	waitForHandleMsgChan := make(chan struct{})
+
+	adapter.On("GetMembership").Return(utils.Members{peerA}).Run(func(args mock.Arguments) {
+		waitForHandleMsgChan <- struct{}{}
+	}).Once()
+
+	var check uint32
+	atomic.StoreUint32(&check, 0)
+
+	gc := NewGossipChannel(pkiID1, orgInChannelA, cs, channelA, adapter, jcm, disabledMetrics, logger)
+
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg1, msg: createStateInfoMsg(1, pkiIDInOrg1, channelA)})
+	gc.HandleMessage(&receivedMsg{pkiID: pkiIDInOrg2, msg: createStateInfoMsg(1, pkiIDInOrg2, channelA)})
+	<-waitForHandleMsgChan
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	adapter.On("GetMembership").Return(utils.Members{peerB}).Run(func(args mock.Arguments) {
+		defer wg.Done()
+		gc.(*gossipChannel).Stop()
+	}).Once()
+
+	atomic.StoreUint32(&check, 1)
+
+	wg.Wait()
+	adapter.On("GetMembership").Return(utils.Members{peerB}).Run(func(args mock.Arguments) {
+		t.Fatalf("Membership tracker should have been stopped already.")
+	})
+
+	time.Sleep(conf.TimeForMembershipTracker * 2)
+}
+

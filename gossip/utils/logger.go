@@ -11,6 +11,7 @@ const (
 	DiscoveryLogger = "gossip.discovery"
 	ElectionLogger  = "gossip.election"
 	PullLogger      = "gossip.pull"
+	ChannelLogger   = "gossip.channel"
 )
 
 var (
