@@ -11,6 +11,7 @@ import (
 	"github.com/11090815/mayy/common/errors"
 	"github.com/11090815/mayy/common/metrics/disabled"
 	"github.com/11090815/mayy/common/mlog"
+	"github.com/11090815/mayy/gossip/gossip/algo"
 	"github.com/11090815/mayy/gossip/metrics"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pcommon"
@@ -28,13 +29,15 @@ var (
 		PullInterval:                   time.Second,
 		RequestStateInfoInterval:       time.Millisecond * 100,
 		PublishStateInfoInterval:       time.Millisecond * 100,
-		BlockExpirationInterval:        time.Second * 6,
+		BlockExpirationTimeout:         time.Second * 6,
 		StateInfoCacheSweepInterval:    time.Second,
 		TimeForMembershipTracker:       time.Second * 5,
-		DigestWaitTime:                 shortenedWaitTime / 2,
-		RequestWaitTime:                shortenedWaitTime,
-		ResponseWaitTime:               shortenedWaitTime,
 		LeadershipMsgExpirationTimeout: DefaultLeadershipMsgExpirationTimeout,
+		PullEngineConfig: algo.Config{
+			DigestWaitTime:   shortenedWaitTime / 2,
+			RequestWaitTime:  shortenedWaitTime,
+			ResponseWaitTime: shortenedWaitTime,
+		},
 	}
 )
 
@@ -1102,7 +1105,7 @@ func TestChannelBlockExpiration(t *testing.T) {
 		}
 	}
 
-	time.Sleep(gc.(*gossipChannel).adapter.GetConf().BlockExpirationInterval + time.Second)
+	time.Sleep(gc.(*gossipChannel).adapter.GetConf().BlockExpirationTimeout + time.Second)
 
 	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
 	select {
@@ -1119,7 +1122,7 @@ func TestChannelBlockExpiration(t *testing.T) {
 		require.Fail(t, "No digest should be sent")
 	}
 
-	time.Sleep(gc.(*gossipChannel).adapter.GetConf().BlockExpirationInterval + time.Second)
+	time.Sleep(gc.(*gossipChannel).adapter.GetConf().BlockExpirationTimeout + time.Second)
 
 	gc.HandleMessage(&receivedMsg{msg: createDataMsg(5, channelA), pkiID: pkiIDInOrg1})
 	select {
@@ -2130,9 +2133,9 @@ func TestChangesInPeers(t *testing.T) {
 				getPeersToTrack: getListOfPeers,
 				report:          logger.Infof,
 				stopChan:        stopChan,
-				tickerC:   tickChan,
+				tickerC:         tickChan,
 				metrics:         disabledMetrics,
-				channelID:         utils.ChannelID("test"),
+				channelID:       utils.ChannelID("test"),
 			}
 
 			wgMT := sync.WaitGroup{}
@@ -2143,7 +2146,6 @@ func TestChangesInPeers(t *testing.T) {
 			}()
 
 			tickChan <- time.Time{}
-
 
 			// mt needs to have received a tick before it was closed
 			wgMT.Wait()
@@ -2218,4 +2220,3 @@ func TestMembershiptrackerStopWhenGCStops(t *testing.T) {
 
 	time.Sleep(conf.TimeForMembershipTracker * 2)
 }
-

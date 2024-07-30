@@ -81,8 +81,9 @@ const (
 type ElectionConfig struct {
 	StartupGracePeriod       time.Duration
 	MembershipSampleInterval time.Duration
-	LeaderAliveThreshold     time.Duration
-	LeaderElectionDuration   time.Duration
+	// LeaderAliveThreshold 定义了 leadership 消息的过期超时时间。
+	LeaderAliveThreshold   time.Duration
+	LeaderElectionDuration time.Duration
 }
 
 // NewLeaderElectionService returns a new LeaderElectionService
@@ -225,7 +226,7 @@ func (le *leaderElectionSvcImpl) leaderElection() {
 	}
 	// Propose ourselves as a leader
 	le.propose()
-	// Collect other proposals
+	// 收集其他节点的 proposals
 	le.waitForInterrupt(le.config.LeaderElectionDuration)
 	// If someone declared itself as a leader, give up
 	// on trying to become a leader too

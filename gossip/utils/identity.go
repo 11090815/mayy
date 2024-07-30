@@ -22,6 +22,7 @@ type IdentityMapper interface {
 
 	GetPKIidOfCert(PeerIdentityType) PKIidType
 
+	// TODO 将来改一下函数名：TidyUpPeers
 	// SuspectPeers 检测 peer 的身份证书或者其上的 CA 证书是否被撤销。
 	SuspectPeers(isSuspected PeerSuspector)
 

@@ -33,20 +33,15 @@ type Config struct {
 	PublishStateInfoInterval time.Duration
 	// RequestStateInfoInterval 每隔这段时间就向其他 PullPeerNum 个节点请求状态信息。
 	RequestStateInfoInterval time.Duration
-	// BlockExpirationInterval 是区块在内存存储区内的保质期，超过这个保质期，区块就过期了。
-	BlockExpirationInterval time.Duration
+	// BlockExpirationTimeout 是区块在内存存储区内的保质期，超过这个保质期，区块就过期了。
+	BlockExpirationTimeout time.Duration
 	// StateInfoCacheSweepInterval 每隔这段时间，就清除掉存储在本地的那些无法确认消息创造者身份的状态消息。
 	StateInfoCacheSweepInterval time.Duration
 	// TimeForMembershipTracker 每隔这段时间，就汇报一下当前 view 下 membership 的变化情况。
 	TimeForMembershipTracker time.Duration
-	// DigestWaitTime 给所有 peer 节点发送过 hello 消息后，默认等待 DigestWaitTime 这段时间，就去处理其他 peer 节点返回来的 digests。
-	DigestWaitTime time.Duration
-	// RequestWaitTime 给其他节点发送过 digests 消息后，会等待 RequestWaitTime 时间，在此时间内，接收其他节点的 request 消息，超过此时间后，就不再接收 request 消息。
-	RequestWaitTime time.Duration
-	// ResponseWaitTime 发送完 request 消息后，等待 ResponseWaitTime 时间，在此时间内，接收其他节点发送来的 response 消息，超过此时间，则忽略后面到来的 response 消息。
-	ResponseWaitTime time.Duration
 	// LeadershipMsgExpirationTimeout 是 leadership 消息在内存存储区内的保质期，超过这个保质期，leadership 消息就过期了。
 	LeadershipMsgExpirationTimeout time.Duration
+	PullEngineConfig               algo.Config
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -77,7 +72,7 @@ func NewGossipChannel(pkiID utils.PKIidType, org utils.OrgIdentityType, mcs util
 	gc.blockMsgStore = msgstore.NewMessageStoreExpirable(comparator, func(m any) {
 		gc.logger.Debugf("Removing No.%s block from blocks puller.", seqNumFromMsg(m))
 		gc.blocksPuller.Remove(seqNumFromMsg(m))
-	}, gc.adapter.GetConf().BlockExpirationInterval, nil, nil, func(a any) {
+	}, gc.adapter.GetConf().BlockExpirationTimeout, nil, nil, func(a any) {
 		gc.logger.Debugf("Removing No.%s block from blocks puller.", seqNumFromMsg(a))
 		gc.blocksPuller.Remove(seqNumFromMsg(a))
 	})
@@ -696,10 +691,10 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 		PeerCountToSelect: gc.adapter.GetConf().PullPeerNum,
 		PullInterval:      gc.adapter.GetConf().PullInterval,
 		Tag:               pgossip.GossipMessage_CHAN_AND_ORG,
-		PullEngineConfig: algo.PullEngineConfig{
-			DigestWaitTime:   gc.adapter.GetConf().DigestWaitTime,
-			RequestWaitTime:  gc.adapter.GetConf().RequestWaitTime,
-			ResponseWaitTime: gc.adapter.GetConf().ResponseWaitTime,
+		PullEngineConfig: algo.Config{
+			DigestWaitTime:   gc.adapter.GetConf().PullEngineConfig.DigestWaitTime,
+			RequestWaitTime:  gc.adapter.GetConf().PullEngineConfig.RequestWaitTime,
+			ResponseWaitTime: gc.adapter.GetConf().PullEngineConfig.ResponseWaitTime,
 		},
 	}
 

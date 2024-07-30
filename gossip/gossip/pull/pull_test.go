@@ -126,13 +126,13 @@ func createPullInstanceWithFilters(endpoint string, peer2PullInst map[string]*pu
 	peer2PullInst[endpoint] = inst
 
 	config := PullConfig{
-		MsgType:           pgossip.PullMsgType_BLOCK_MSG,
-		Channel:           []byte(""),
+		MsgType: pgossip.PullMsgType_BLOCK_MSG,
+		Channel: []byte(""),
 		// ID:                endpoint,
 		PeerCountToSelect: 3,
 		PullInterval:      pullInterval,
 		Tag:               pgossip.GossipMessage_EMPTY,
-		PullEngineConfig: algo.PullEngineConfig{
+		PullEngineConfig: algo.Config{
 			DigestWaitTime:   100 * time.Millisecond,
 			RequestWaitTime:  200 * time.Millisecond,
 			ResponseWaitTime: 300 * time.Millisecond,

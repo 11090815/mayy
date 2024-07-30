@@ -46,7 +46,7 @@ var (
 	acceptAll = func(msg any) bool {
 		return true
 	}
-	testCommConfig = CommConfig{
+	testCommConfig = Config{
 		DialTimeout:  300 * time.Millisecond,
 		ConnTimeout:  DefaultConnTimeout,
 		RecvBuffSize: DefaultRecvBuffSize,

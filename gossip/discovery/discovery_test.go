@@ -23,12 +23,12 @@ import (
 )
 
 var (
-	defaultTestConfig = DiscoveryConfig{
+	defaultTestConfig = Config{
 		AliveTimeInterval:            300 * time.Millisecond,
 		AliveExpirationTimeout:       3000 * time.Millisecond,
 		AliveExpirationCheckInterval: 300 * time.Millisecond,
 		ReconnectInterval:            3000 * time.Millisecond,
-		MaxConnectAttempts:           DefaultMaxConnectAttempts,
+		MaxConnectionAttempts:        DefaultMaxConnectAttempts,
 		MsgExpirationFactor:          DefaultMsgExpirationFactor,
 	}
 
@@ -369,7 +369,7 @@ func createDiscoveryInstance(port int, id string, bootstrapPeers []string) *goss
 }
 
 // 可以广播
-func createDiscoveryInstanceCustomConfig(port int, id string, bootstrapPeers []string, config DiscoveryConfig) *gossipInstance {
+func createDiscoveryInstanceCustomConfig(port int, id string, bootstrapPeers []string, config Config) *gossipInstance {
 	return createDiscoveryInstanceThatGossips(port, id, bootstrapPeers, true, noopPolicy, config)
 }
 
@@ -383,17 +383,17 @@ func createDiscoveryInstanceWithNoGossipWithDisclosurePolicy(port int, id string
 	return createDiscoveryInstanceThatGossips(port, id, bootstrapPeers, false, policy, defaultTestConfig)
 }
 
-func createDiscoveryInstanceThatGossips(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, config DiscoveryConfig) *gossipInstance {
+func createDiscoveryInstanceThatGossips(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, config Config) *gossipInstance {
 	return createDiscoveryInstanceThatGossipsWithInterceptors(port, id, bootstrapPeers, shouldGossip, policy, func(sgm *utils.SignedGossipMessage) {}, config)
 }
 
 // interceptor 将别人广播来的消息用 interceptor 截获并处理一下。
-func createDiscoveryInstanceThatGossipsWithInterceptors(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, f func(*utils.SignedGossipMessage), config DiscoveryConfig) *gossipInstance {
+func createDiscoveryInstanceThatGossipsWithInterceptors(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, f func(*utils.SignedGossipMessage), config Config) *gossipInstance {
 	mockTracker := &mockAnchorPeerTracker{}
 	return createDiscoveryInstanceWithAnchorPeerTracker(port, id, bootstrapPeers, shouldGossip, policy, f, config, mockTracker, nil)
 }
 
-func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, fn func(*utils.SignedGossipMessage), config DiscoveryConfig, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) *gossipInstance {
+func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrapPeers []string, shouldGossip bool, policy DisclosurePolicy, fn func(*utils.SignedGossipMessage), config Config, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) *gossipInstance {
 	comm := &mockCommModule{
 		conns:          make(map[string]*grpc.ClientConn),
 		streams:        make(map[string]pgossip.Gossip_GossipStreamClient),

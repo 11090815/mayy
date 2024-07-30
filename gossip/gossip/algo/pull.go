@@ -113,13 +113,16 @@ type pullEngineImpl struct {
 	responseWaitTime   time.Duration
 }
 
-type PullEngineConfig struct {
-	DigestWaitTime   time.Duration
-	RequestWaitTime  time.Duration
+type Config struct {
+	// DigestWaitTime 给所有 peer 节点发送过 hello 消息后，默认等待 DigestWaitTime 这段时间，就去处理其他 peer 节点返回来的 digests。
+	DigestWaitTime time.Duration
+	// RequestWaitTime 给其他节点发送过 digests 消息后，会等待 RequestWaitTime 时间，在此时间内，接收其他节点的 request 消息，超过此时间后，就不再接收 request 消息。
+	RequestWaitTime time.Duration
+	// ResponseWaitTime 发送完 request 消息后，等待 ResponseWaitTime 时间，在此时间内，接收其他节点发送来的 response 消息，超过此时间，则忽略后面到来的 response 消息。
 	ResponseWaitTime time.Duration
 }
 
-func NewPullEngineWithFilter(adapter PullAdapter, sleepTime time.Duration, dFilter DigestFilter, config PullEngineConfig, logger mlog.Logger) PullEngine {
+func NewPullEngineWithFilter(adapter PullAdapter, sleepTime time.Duration, dFilter DigestFilter, config Config, logger mlog.Logger) PullEngine {
 	engine := &pullEngineImpl{
 		adapter:            adapter,
 		stopFlag:           0,
@@ -152,7 +155,7 @@ func NewPullEngineWithFilter(adapter PullAdapter, sleepTime time.Duration, dFilt
 	return engine
 }
 
-func NewPullEngine(adapter PullAdapter, sleepTime time.Duration, config PullEngineConfig, logger mlog.Logger) PullEngine {
+func NewPullEngine(adapter PullAdapter, sleepTime time.Duration, config Config, logger mlog.Logger) PullEngine {
 	var dFilter DigestFilter = func(context any) func(digestItem string) bool {
 		return func(digestItem string) bool {
 			return true

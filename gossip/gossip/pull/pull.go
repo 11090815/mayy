@@ -67,7 +67,7 @@ type PullConfig struct {
 	PeerCountToSelect int // 初始化时向这么多个节点发送 pull 消息。
 	Tag               pgossip.GossipMessage_Tag
 	MsgType           pgossip.PullMsgType
-	PullEngineConfig  algo.PullEngineConfig
+	PullEngineConfig  algo.Config
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -235,7 +235,7 @@ func (pm *pullMediator) Hello(endpoint string, nonce uint64) {
 		pm.logger.Errorf("Failed creating signed Hello message: %s.", err.Error())
 		return
 	}
-	var object string
+	var object = endpoint
 	if len(endpoint) == 0 {
 		object = "unknown peer"
 	}

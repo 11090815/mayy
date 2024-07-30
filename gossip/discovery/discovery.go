@@ -388,18 +388,20 @@ func (ts *timestamp) String() string {
 	return fmt.Sprintf("{timestamp | incTime: %s; seqNum: %d; lastSeen: %s}", incTime, ts.seqNum, lastSeen)
 }
 
-type DiscoveryConfig struct {
+type Config struct {
 	AliveTimeInterval            time.Duration
 	AliveExpirationTimeout       time.Duration
 	AliveExpirationCheckInterval time.Duration
 	ReconnectInterval            time.Duration
-	MaxConnectAttempts           int
-	MsgExpirationFactor          int
-	BootstrapPeers               []string
+	MaxConnectionAttempts        int
+	// MsgExpirationFactor 定义了一个乘法因子，用来调节 alive 消息的过期时间。
+	MsgExpirationFactor int
+	// BootstrapPeers 在启动时需要连接到的 peer 节点。
+	BootstrapPeers []string
 }
 
 func NewDiscoveryService(self utils.NetworkMember, adapter DiscoveryAdapter, crypt CryptoService, policy DisclosurePolicy,
-	config DiscoveryConfig, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) Discovery {
+	config Config, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) Discovery {
 	gdi := &gossipDiscoveryImpl{
 		self:                         self,
 		incTime:                      uint64(time.Now().UnixNano()),
@@ -423,7 +425,7 @@ func NewDiscoveryService(self utils.NetworkMember, adapter DiscoveryAdapter, cry
 		reconnectInterval:            config.ReconnectInterval,
 		aliveExpirationCheckInterval: config.AliveExpirationCheckInterval,
 		bootstrapPeers:               config.BootstrapPeers,
-		maxConnectAttempts:           config.MaxConnectAttempts,
+		maxConnectAttempts:           config.MaxConnectionAttempts,
 	}
 
 	gdi.validateSelfConfig()

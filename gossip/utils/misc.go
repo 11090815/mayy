@@ -2,9 +2,12 @@ package utils
 
 import (
 	"reflect"
+	"sync"
+	"time"
 
 	"github.com/11090815/mayy/csp/factory"
 	"github.com/11090815/mayy/csp/softimpl/hash"
+	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 )
 
@@ -145,4 +148,47 @@ func GenerateMAC(pkiID PKIidType, channelID ChannelID) []byte {
 		panic(err)
 	}
 	return hash
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+var viperLock sync.RWMutex
+
+func GetIntOrDefault(key string, defVal int) int {
+	viperLock.RLock()
+	defer viperLock.RUnlock()
+	if val := viper.GetInt(key); val != 0 {
+		return val
+	}
+	return defVal
+}
+
+func GetDurationOrDefault(key string, defVal time.Duration) time.Duration {
+	viperLock.RLock()
+	defer viperLock.RUnlock()
+	if val := viper.GetDuration(key); val != 0 {
+		return val
+	}
+	return defVal
+}
+
+func GetBool(key string) bool {
+	viperLock.RLock()
+	defer viperLock.RUnlock()
+	return viper.GetBool(key)
+}
+
+func GetString(key string) string {
+	viperLock.RLock()
+	defer viperLock.RUnlock()
+	return viper.GetString(key)
+}
+
+func GetStringSliceOrDefault(key string, defVal []string) []string {
+	viperLock.RLock()
+	defer viperLock.RUnlock()
+	if val := viper.GetStringSlice(key); val != nil {
+		return val
+	}
+	return defVal
 }

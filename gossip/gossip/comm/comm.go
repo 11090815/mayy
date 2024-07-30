@@ -64,7 +64,7 @@ type Comm interface {
 	Stop()
 }
 
-type CommConfig struct {
+type Config struct {
 	DialTimeout  time.Duration // 建立拨号连接的超时时间
 	ConnTimeout  time.Duration // 发送消息的超时时间
 	RecvBuffSize int           // 消息接收池所能存放消息的条数
@@ -72,8 +72,6 @@ type CommConfig struct {
 }
 
 /* ------------------------------------------------------------------------------------------ */
-
-
 
 /* ------------------------------------------------------------------------------------------ */
 
@@ -161,7 +159,7 @@ type commImpl struct {
 }
 
 func NewCommInstance(s *grpc.Server, certs *utils.TLSCertificates, idStore utils.IdentityMapper, identity utils.PeerIdentityType, logger mlog.Logger,
-	secureDialOpts utils.PeerSecureDialOpts, sa utils.SecurityAdvisor, metrics *metrics.CommMetrics, config CommConfig, dialOpts ...grpc.DialOption) (Comm, error) {
+	secureDialOpts utils.PeerSecureDialOpts, sa utils.SecurityAdvisor, metrics *metrics.CommMetrics, config Config, dialOpts ...grpc.DialOption) (Comm, error) {
 	inst := &commImpl{
 		sa:              sa,
 		tlsCerts:        certs,

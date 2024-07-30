@@ -10,3 +10,81 @@ LOG:
   DirPath: output/logs
   # 单个日志文件所能存储的最大字节数：1MB
   SingleFileMaxSize: 1048576
+
+PEER:
+  GOSSIP:
+    # PropagateIterations 定义了将批处理中的消息推送给 peer 节点的次数。
+    PropagateIterations: 1
+    # MaxPropagationBurstSize 定义了批处理中待处理的消息数量上限（非硬性条件），如果往批处理中添加的
+    # 待处理消息数量达到了 MaxPropagationBurstSize，则会主动执行一次 emit 操作，处理批处理中的所有消
+    # 息一次。
+    MaxPropagationBurstSize: 10
+    # PropagatePeerNum 定义了将消息推送给的 peer 节点的个数。
+    PropagatePeerNum: 3
+    # MaxPropagationBurstLatency 定义了连续消息推送之间的最大时间间隔。
+    MaxPropagationBurstLatency: 10ms
+    # ExternalEndpoint 是组织外的其他节点可以知道的网络地址。
+    ExternalEndpoint: 0.0.0.0:7052
+    # PublishCertPeriod
+    PublishCertPeriod: 10s
+    # SkipBlockVerification 控制是否验证区块消息。
+    SkipBlockVerification: false
+    COMM:
+      # DialTimeout 定义了拨号建立连接的超时时间。
+      DialTimeout: 3s
+      # ConnTimeout 定义了我连接别人并发送消息的超时时间。
+      ConnTimeout: 2s
+      # RecvBuffSize 定义了接收消息池子的容量。
+      RecvBuffSize: 200
+      # SendBuffSize 定义了发送消息的池子容量。
+      SendBuffSize: 200
+    CHANNEL:
+      # MaxBlockCountToStore 定义了内存中最多能存储的区块个数。
+      MaxBlockCountToStore: 10
+      # PullInterval 定义了 pull 的频率。
+      PullInterval: 4s
+      # PullPeerNum 定义了能够从 peer 节点 pull 消息的 peer 节点数量。
+      PullPeerNum: 3
+      # PublishStateInfoInterval 定义了向其他 peer 节点广播自身 state info 消息的频率。
+      PublishStateInfoInterval: 4s
+      # RequestStateInfoInterval 定义了向其他 peer 节点请求 state info 消息的频率。
+      RequestStateInfoInterval: 4s
+      # TimeForMembershipTracker 定义了检查 membership 变化的时间间隔。
+      TimeForMembershipTracker: 5s
+      # LeadershipMsgExpirationTimeout 是 leadership 消息在内存存储区内的保质期，超过这个保质期，leadership 消息就过期了。
+      LeadershipMsgExpirationTimeout: 100s
+      # BlockExpirationTimeout 定义了区块在内存存储区内的存储有效期。
+      BlockExpirationTimeout: 400s
+      # StateInfoCacheSweepInterval 每隔这段时间，就清除掉存储在本地的那些无法确认消息创造者身份的状态消息。
+      StateInfoCacheSweepInterval: 20s
+    PULL:
+      # DigestWaitTime 定义了 pull engine 等待 digest 消息的超时时间，这个时间一过，pull engine 就会处理收到的 digest 消息。\
+      DigestWaitTime: 1s
+      # RequestWaitTime 定义了 pull engine 等待 request 消息的超时时间，这个时间一过，pull engine 就不会再接收 request 消息。
+      RequestWaitTime: 1500ms
+      # ResponseWaitTime 定义了 pull engine 等待 response 消息的超时时间，这个时间一过，pull engine 就不会再接收 response 消息。
+      ResponseWaitTime: 2s
+    ELECTION:
+      # LeaderAliveThreshold 定义了 leadership 消息的过期超时时间。
+      LeaderAliveThreshold: 10s
+      # StartupGracePeriod 定义了系统启动后等待的时间间隔，直到系统内 membership 达成稳定状态。
+      StartupGracePeriod: 15s
+      # MembershipSampleInterval 与 StartupGracePeriod 搭配使用，定义了一个短暂的时间间隔，每隔这段时间检查一下 membership 是否达到稳定状态。
+      MembershipSampleInterval: 1s
+      # LeaderElectionDuration 选举新领导过程等待的时间。
+      LeaderElectionDuration: 5s
+    DISCOVERY:  
+      # ReconnectInterval 定义了尝试重新建立连接的时间间隔。
+      ReconnectInterval: 25s
+      # MaxConnectionAttempts 定义了尝试连接某个 peer 节点的最大尝试次数。
+      MaxConnectionAttempts: 120
+      # AliveTimeInterval 定义了 alive 检查的时间间隔。
+      AliveTimeInterval: 5s
+      # AliveExpirationTimeout 定义了 alive 消息过期的超时时间。
+      AliveExpirationTimeout: 25s
+      # AliveExpirationCheckInterval 定义了检查 alive 消息是否过期的时间间隔。
+      AliveExpirationCheckInterval: 2500ms
+      # MsgExpirationFactor 定义了一个乘法因子，用来调节 alive 消息的过期时间。
+      MsgExpirationFactor: 20
+      # BootstrapPeers
+      BootstrapPeers: ["127.0.0.1:2048", "127.0.0.1:2049", "127.0.0.1:2050"]

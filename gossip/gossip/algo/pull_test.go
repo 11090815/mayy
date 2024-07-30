@@ -39,7 +39,7 @@ func newPushPullTestInstance(name string, peers map[string]*pullTestInstance) *p
 		stopCh:            make(chan struct{}),
 	}
 
-	config := PullEngineConfig{
+	config := Config{
 		DigestWaitTime:   time.Millisecond * 100,
 		RequestWaitTime:  time.Millisecond * 200,
 		ResponseWaitTime: time.Millisecond * 200,
