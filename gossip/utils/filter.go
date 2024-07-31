@@ -4,10 +4,12 @@ type RoutingFilter func(NetworkMember) bool
 
 /* ------------------------------------------------------------------------------------------ */
 
-var SelectNoncePolicy RoutingFilter = func(nm NetworkMember) bool {
+// SelectNonePolicy 无论如何都返回 false。
+var SelectNonePolicy RoutingFilter = func(nm NetworkMember) bool {
 	return false
 }
 
+// SelectAllPolicy 无论如何都返回 true。
 var SelectAllPolicy RoutingFilter = func(nm NetworkMember) bool {
 	return true
 }

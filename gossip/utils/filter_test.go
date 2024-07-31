@@ -8,7 +8,7 @@ import (
 
 func TestSelectPolicies(t *testing.T) {
 	require.True(t, SelectAllPolicy(NetworkMember{}))
-	require.False(t, SelectNoncePolicy(NetworkMember{}))
+	require.False(t, SelectNonePolicy(NetworkMember{}))
 }
 
 func TestCombineRoutingFilters(t *testing.T) {
@@ -24,7 +24,7 @@ func TestCombineRoutingFilters(t *testing.T) {
 	}
 
 	require.True(t, CombineRoutingFilters(a, b)(nm))
-	require.False(t, CombineRoutingFilters(a, b, SelectNoncePolicy)(nm))
+	require.False(t, CombineRoutingFilters(a, b, SelectNonePolicy)(nm))
 	require.False(t, CombineRoutingFilters(a, b)(NetworkMember{Endpoint: "a"}))
 }
 

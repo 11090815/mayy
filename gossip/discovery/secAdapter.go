@@ -8,10 +8,9 @@ import (
 	"github.com/11090815/mayy/protobuf/pgossip"
 )
 
-type CryptoService interface {
-	ValidateAliveMsg(message *utils.SignedGossipMessage) bool
-
+type DiscoverySecurityAdapter interface {
 	SignMessage(m *pgossip.GossipMessage, internalEndpoint string) *pgossip.Envelope
+	ValidateAliveMsg(m *utils.SignedGossipMessage) bool
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -20,17 +19,17 @@ type discoverySecurityAdapter struct {
 	identity              utils.PeerIdentityType
 	includeIdentityPeriod time.Time
 	idMapper              utils.IdentityMapper
-	messageCryptoService  utils.MessageCryptoService
+	mcs                   utils.MessageCryptoService
 	logger                mlog.Logger
 }
 
-func newDiscoverySecurityAdapter(identity utils.PeerIdentityType, iip time.Time,
+func NewDiscoverySecurityAdapter(identity utils.PeerIdentityType, iip time.Time,
 	idMapper utils.IdentityMapper, mcs utils.MessageCryptoService, logger mlog.Logger) *discoverySecurityAdapter {
 	return &discoverySecurityAdapter{
 		identity:              identity,
 		includeIdentityPeriod: iip,
 		idMapper:              idMapper,
-		messageCryptoService:  mcs,
+		mcs:                   mcs,
 		logger:                logger,
 	}
 }
@@ -66,7 +65,7 @@ func (dsa *discoverySecurityAdapter) ValidateAliveMsg(sgm *utils.SignedGossipMes
 
 func (dsa *discoverySecurityAdapter) SignMessage(gm *pgossip.GossipMessage, internalEndpoint string) *pgossip.Envelope {
 	signer := func(msg []byte) ([]byte, error) {
-		return dsa.messageCryptoService.Sign(msg)
+		return dsa.mcs.Sign(msg)
 	}
 
 	if gm.GetAliveMsg() != nil && time.Now().Before(dsa.includeIdentityPeriod) {
@@ -96,7 +95,7 @@ func (dsa *discoverySecurityAdapter) SignMessage(gm *pgossip.GossipMessage, inte
 
 func (dsa *discoverySecurityAdapter) validateAliveMsgSignature(sgm *utils.SignedGossipMessage, identity utils.PeerIdentityType) bool {
 	verifier := func(identity utils.PeerIdentityType, signature, message []byte) error {
-		return dsa.messageCryptoService.Verify(identity, signature, message)
+		return dsa.mcs.Verify(identity, signature, message)
 	}
 
 	if err := sgm.Verify(identity, verifier); err != nil {

@@ -135,6 +135,8 @@ func SignSecret(envelope *pgossip.Envelope, signFunc SignFuncType, secret *pgoss
 	return nil
 }
 
+// NoopSign 一般来说，gossip 广播 DataMsg 前，会调用此方法对 DataMsg 进行一次虚假的签名，实际上也就是说，
+// DataMsg 不需要被签名。
 func NoopSign(gm *pgossip.GossipMessage) (*SignedGossipMessage, error) {
 	sgm := &SignedGossipMessage{
 		GossipMessage: gm,
@@ -404,4 +406,68 @@ func GetPullMsgType(m *pgossip.GossipMessage) pgossip.PullMsgType {
 
 func IsChannelRestricted(m *pgossip.GossipMessage) bool {
 	return m.Tag == pgossip.GossipMessage_CHAN_AND_ORG || m.Tag == pgossip.GossipMessage_CHAN_ONLY || m.Tag == pgossip.GossipMessage_CHAN_OR_ORG
+}
+
+func IsOrgRestricted(m *pgossip.GossipMessage) bool {
+	return m.Tag == pgossip.GossipMessage_CHAN_AND_ORG || m.Tag == pgossip.GossipMessage_ORG_ONLY
+}
+
+func IsTagValid(msg *pgossip.GossipMessage) error {
+	if msg.Tag == pgossip.GossipMessage_UNDEFINED {
+		return errors.NewError("undefined tag")
+	}
+
+	if msg.GetDataMsg() != nil {
+		if msg.Tag != pgossip.GossipMessage_CHAN_AND_ORG {
+			return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_CHAN_AND_ORG.String())
+		}
+		return nil
+	}
+
+	if msg.GetAliveMsg() != nil || msg.GetMemReq() != nil || msg.GetMemRes() != nil {
+		if msg.Tag != pgossip.GossipMessage_EMPTY {
+			return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_EMPTY.String())
+		}
+		return nil
+	}
+
+	if msg.GetPeerIdentity() != nil {
+		if msg.Tag != pgossip.GossipMessage_ORG_ONLY {
+			return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_ORG_ONLY.String())
+		}
+		return nil
+	}
+
+	if IsPullMsg(msg) {
+		switch GetPullMsgType(msg) {
+		case pgossip.PullMsgType_BLOCK_MSG:
+			if msg.Tag != pgossip.GossipMessage_CHAN_AND_ORG {
+				return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_CHAN_AND_ORG.String())
+			}
+			return nil
+		case pgossip.PullMsgType_IDENTITY_MSG:
+			if msg.Tag != pgossip.GossipMessage_EMPTY {
+				return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_EMPTY.String())
+			}
+			return nil
+		default:
+			return errors.NewErrorf("invalid PullMsgType: %s", GetPullMsgType(msg).String())
+		}
+	}
+
+	if msg.GetStateInfo() != nil || msg.GetStateInfoPullReq() != nil || msg.GetStateInfoSnapshot() != nil || msg.GetRemoteStateReq() != nil || msg.GetRemoteStateRes() != nil {
+		if msg.Tag != pgossip.GossipMessage_CHAN_OR_ORG {
+			return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_CHAN_OR_ORG.String())
+		}
+		return nil
+	}
+
+	if msg.GetLeadershipMsg() != nil {
+		if msg.Tag != pgossip.GossipMessage_CHAN_AND_ORG {
+			return errors.NewErrorf("%s should be with tag %s", GossipMessageToString(msg), pgossip.GossipMessage_CHAN_AND_ORG.String())
+		}
+		return nil
+	}
+
+	return errors.NewErrorf("Unexpected gossip message: %s", GossipMessageToString(msg))
 }

@@ -107,19 +107,7 @@ type DiscoveryAdapter interface {
 	Stop()
 }
 
-// batchingEmitter 用于 gossip 推送/转发 阶段。消息被添加到 batchingEmitter 中，它们被周期性地分批转发 T 次，
-// 然后被丢弃。如果 batchingEmitter 存储的消息计数达到一定容量，也会触发消息分派。
-type batchingEmitter interface {
-	Add(any)
-	Size() int
-	Stop()
-}
-
-// emittedGossipMessage 封装了签名的 gossip 消息，并在消息转发时使用路由过滤器
-type emittedGossipMessage struct {
-	*utils.SignedGossipMessage
-	filter func(id utils.PKIidType) bool
-}
+/* ------------------------------------------------------------------------------------------ */
 
 type discoveryAdapter struct {
 	c                comm.Comm
@@ -132,7 +120,7 @@ type discoveryAdapter struct {
 	stopOnce         sync.Once
 }
 
-func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter batchingEmitter, presumedDead chan utils.PKIidType, disclosurePolicy DisclosurePolicy) DiscoveryAdapter {
+func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter utils.BatchingEmitter, presumedDead chan utils.PKIidType, disclosurePolicy DisclosurePolicy) DiscoveryAdapter {
 	adapter := &discoveryAdapter{
 		c:            c,
 		presumedDead: presumedDead,
@@ -141,21 +129,13 @@ func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter batchingEmitte
 			if propagateTimes == 0 {
 				return
 			}
-			emitter.Add(&emittedGossipMessage{
-				SignedGossipMessage: msg,
-				filter: func(id utils.PKIidType) bool {
-					return true
-				},
-			})
+			emitter.Add(utils.NewEmittedGossipMessage(msg, func(pt utils.PKIidType) bool {return true}))
 		},
 		forwardFunc: func(msg utils.ReceivedMessage) {
 			if propagateTimes == 0 {
 				return
 			}
-			emitter.Add(&emittedGossipMessage{
-				SignedGossipMessage: msg.GetSignedGossipMessage(),
-				filter:              msg.GetConnectionInfo().PkiID.IsNotSameFilter,
-			})
+			emitter.Add(utils.NewEmittedGossipMessage(msg.GetSignedGossipMessage(), msg.GetConnectionInfo().PkiID.IsNotSameFilter))
 		},
 		disclosurePolicy: disclosurePolicy,
 		stopping:         int32(0),
@@ -281,7 +261,7 @@ type gossipDiscoveryImpl struct {
 	bootstrapPeers    []string
 	anchorPeerTracker AnchorPeerTracker
 
-	crypt   CryptoService
+	crypt   DiscoverySecurityAdapter
 	adapter DiscoveryAdapter
 	pubsub  *utils.PubSub
 
@@ -400,7 +380,7 @@ type Config struct {
 	BootstrapPeers []string
 }
 
-func NewDiscoveryService(self utils.NetworkMember, adapter DiscoveryAdapter, crypt CryptoService, policy DisclosurePolicy,
+func NewDiscoveryService(self utils.NetworkMember, adapter DiscoveryAdapter, crypt DiscoverySecurityAdapter, policy DisclosurePolicy,
 	config Config, anchorPeerTracker AnchorPeerTracker, logger mlog.Logger) Discovery {
 	gdi := &gossipDiscoveryImpl{
 		self:                         self,
@@ -565,7 +545,7 @@ func (gdi *gossipDiscoveryImpl) Connect(member utils.NetworkMember, identifier i
 	}
 	go func() {
 		for i := 0; i < gdi.maxConnectAttempts && !gdi.closed(); i++ {
-			id, err := identifier()
+			id, err := identifier() // 这个地方会尝试与 member 进行握手，获取 member 的证书等身份信息
 			if err != nil {
 				if gdi.closed() {
 					return

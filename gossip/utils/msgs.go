@@ -42,10 +42,3 @@ type AuthInfo struct {
 	SignedData []byte
 	Signature  []byte
 }
-
-/* ------------------------------------------------------------------------------------------ */
-
-type EmittedGossipMessage struct {
-	*SignedGossipMessage
-	filter func(id PKIidType) bool
-}

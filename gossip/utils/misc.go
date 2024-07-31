@@ -91,7 +91,7 @@ type AnchorPeer struct {
 /* ------------------------------------------------------------------------------------------ */
 
 // IndexInSlice 给定一个数组 array 和一个可能存在于 array 中的一个元素 o，
-// 返回 o 在 array 中的索引位置。
+// 返回 o 在 array 中的索引位置，如果给定的元素不存在，则返回 -1。
 func IndexInSlice(array any, o any, equals Equals) int {
 	arr := reflect.ValueOf(array)
 	for i := 0; i < arr.Len(); i++ {

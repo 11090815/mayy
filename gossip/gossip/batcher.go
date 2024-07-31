@@ -6,18 +6,10 @@ import (
 	"time"
 
 	"github.com/11090815/mayy/common/errors"
+	"github.com/11090815/mayy/gossip/utils"
 )
 
 type emitBatchCallback func([]any)
-
-type BatchingEmitter interface {
-	Add(any)
-
-	Stop()
-
-	// Size 返回要被发送的消息数量。
-	Size() int
-}
 
 type batchingEmitter struct {
 	// iterations 定义了批处理中每个消息能被触发执行 emit 的次数。
@@ -31,7 +23,7 @@ type batchingEmitter struct {
 	stopFlag  int32
 }
 
-func newBatchingEmitter(iterations, burstSize int, delay time.Duration, callback emitBatchCallback) BatchingEmitter {
+func newBatchingEmitter(iterations, burstSize int, delay time.Duration, callback emitBatchCallback) utils.BatchingEmitter {
 	if iterations < 0 {
 		panic(errors.NewErrorf("got a negative iteration number: %d", iterations))
 	}
