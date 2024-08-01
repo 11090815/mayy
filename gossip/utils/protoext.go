@@ -471,3 +471,7 @@ func IsTagValid(msg *pgossip.GossipMessage) error {
 
 	return errors.NewErrorf("Unexpected gossip message: %s", GossipMessageToString(msg))
 }
+
+func IsPrivateDataMsg(m *pgossip.GossipMessage) bool {
+	return m.GetRemotePvtDataReq() != nil || m.GetRemotePvtDataRes() != nil || m.GetPrivateDataMsg() != nil
+}

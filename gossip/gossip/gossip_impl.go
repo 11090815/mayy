@@ -3,6 +3,7 @@ package gossip
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/11090815/mayy/gossip/metrics"
 	"github.com/11090815/mayy/gossip/utils"
 	"github.com/11090815/mayy/protobuf/pgossip"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -60,7 +62,7 @@ type Node struct {
 	cs           *certStore
 	idMapper     utils.IdentityMapper
 	presumedDead chan utils.PKIidType
-	conf         Config
+	conf         *Config
 
 	disc           discovery.Discovery
 	discAdapter    discovery.DiscoveryAdapter
@@ -80,6 +82,99 @@ type Node struct {
 	stopSignal *sync.WaitGroup
 	stopFlag   int32
 	toDieChan  chan struct{}
+}
+
+func NewNode(conf *Config, s *grpc.Server, sa utils.SecurityAdvisor, mcs utils.MessageCryptoService,
+	selfIdentity utils.PeerIdentityType, secureDialOpts utils.PeerSecureDialOpts, logger mlog.Logger,
+	gossipMetrics *metrics.GossipMetrics, anchorPeerTracker discovery.AnchorPeerTracker, discLogger mlog.Logger) *Node {
+	node := &Node{
+		selfOrg:               sa.OrgByPeerIdentity(selfIdentity),
+		secAdvisor:            sa,
+		selfIdentity:          selfIdentity,
+		presumedDead:          make(chan utils.PKIidType, presumedDeadChanSize),
+		disc:                  nil,
+		mcs:                   mcs,
+		conf:                  conf,
+		demux:                 comm.NewChannelDeMultiplexer(),
+		logger:                logger,
+		toDieChan:             make(chan struct{}),
+		stopFlag:              int32(0),
+		stopSignal:            &sync.WaitGroup{},
+		includeIdentityPeriod: time.Now().Add(conf.PublishCertPeriod),
+		gossipMetrics:         gossipMetrics,
+	}
+
+	node.stateInfoMsgStore = node.newStateInfoMsgStore()
+
+	node.idMapper = utils.NewIdentityMapper(mcs, selfIdentity, func(id utils.PKIidType, identity utils.PeerIdentityType) {
+		node.communication.CloseConn(&utils.RemotePeer{PKIID: id})
+		node.certPuller.Remove(id.String())
+	}, sa)
+
+	commConfig := comm.Config{
+		DialTimeout:  conf.CommConfig.DialTimeout,
+		ConnTimeout:  conf.CommConfig.ConnTimeout,
+		RecvBuffSize: conf.CommConfig.RecvBuffSize,
+		SendBuffSize: conf.CommConfig.SendBuffSize,
+	}
+	var err error
+	node.communication, err = comm.NewCommInstance(s, conf.TLSCerts, node.idMapper, selfIdentity, logger, secureDialOpts, sa, gossipMetrics.CommMetrics, commConfig)
+	if err != nil {
+		logger.Errorf("Failed instantiating communication layer: %s.", err.Error())
+		return nil
+	}
+
+	node.chanState = node.newChannelState()
+	node.emitter = newBatchingEmitter(conf.PropagateIterations, conf.MaxPropagationBurstSize, conf.MaxPropagationBurstLatency, node.sendGossipBatch)
+	node.discAdapter = discovery.NewDiscoveryAdapter(node.communication, conf.PropagateIterations, node.emitter, node.presumedDead, node.disclosurePolicy)
+	node.discSecAdapter = discovery.NewDiscoverySecurityAdapter(selfIdentity, node.includeIdentityPeriod, node.idMapper, mcs, logger)
+
+	discoveryConfig := discovery.Config{
+		AliveTimeInterval:            conf.DiscoveryConfig.AliveTimeInterval,
+		AliveExpirationTimeout:       conf.DiscoveryConfig.AliveExpirationTimeout,
+		AliveExpirationCheckInterval: conf.DiscoveryConfig.AliveExpirationCheckInterval,
+		ReconnectInterval:            conf.DiscoveryConfig.ReconnectInterval,
+		MaxConnectionAttempts:        conf.DiscoveryConfig.MaxConnectionAttempts,
+		MsgExpirationFactor:          conf.DiscoveryConfig.MsgExpirationFactor,
+		BootstrapPeers:               conf.DiscoveryConfig.BootstrapPeers,
+	}
+	self := node.selfNetworkMember()
+	node.disc = discovery.NewDiscoveryService(self, node.discAdapter, node.discSecAdapter, node.disclosurePolicy, discoveryConfig, anchorPeerTracker, discLogger)
+	node.logger.Infof("Creating gossip service with self membership of %s.", node.selfNetworkMember().String())
+
+	node.certPuller = node.createCertStorePuller()
+	node.cs = newCertStore(node.certPuller, node.idMapper, selfIdentity, mcs, logger)
+
+	if node.conf.ExternalEndpoint == "" {
+		node.logger.Warnf("External endpoint is empty, peer %s will not be accessible outside of its organization.", self.PKIid.String())
+	}
+
+	node.stopSignal.Add(2)
+	go node.start()
+	go node.connect2BootstrapPeers()
+
+	return node
+}
+
+func (node *Node) JoinChan(joinMsg utils.JoinChannelMessage, channelID utils.ChannelID) {
+	node.chanState.joinChannel(joinMsg, channelID, node.gossipMetrics.MembershipMetrics)
+	for _, org := range joinMsg.Orgs() {
+		node.learnAnchorPeers(channelID, org, joinMsg.AnchorPeersOf(org))
+	}
+}
+
+func (node *Node) LeaveChan(channelID utils.ChannelID) {
+	ch := node.chanState.getGossipChannelByChannelID(channelID)
+	if ch == nil {
+		node.logger.Info("No need to leave this channel (%s), because the channel is not existed.", channelID.String())
+		return
+	}
+	ch.LeaveChannel()
+}
+
+// SuspectPeers 遍历 cert store 中所有被 isSuspected 怀疑的节点证书是否被撤销。
+func (node *Node) SuspectPeers(isSuspected utils.PeerSuspector) {
+	node.cs.suspectPeers(isSuspected)
 }
 
 // IdentityInfo 返回所有网络邻居节点的身份信息，包括每个节点的：pki-id、cert、org。
@@ -313,6 +408,218 @@ func (node *Node) Stop() {
 
 /* ------------------------------------------------------------------------------------------ */
 
+func (node *Node) newStateInfoMsgStore() msgstore.MessageStore {
+	policy := utils.NewGossipMessageComparator(0)
+	return msgstore.NewMessageStoreExpirable(policy, msgstore.Noop, node.conf.ChannelConfig.PublishStateInfoInterval*100, nil, nil, msgstore.Noop)
+}
+
+func (node *Node) newChannelState() *channelState {
+	return &channelState{
+		stopping: int32(0),
+		mutex:    &sync.RWMutex{},
+		channels: make(map[string]channel.GossipChannel),
+		node:     node,
+	}
+}
+
+func (node *Node) learnAnchorPeers(channel utils.ChannelID, orgOfAnchorPeers utils.OrgIdentityType, anchorPeers []utils.AnchorPeer) {
+	if len(anchorPeers) == 0 {
+		node.logger.Infof("No configured anchor peers of org (%s) for channel (%s) to learn about.", orgOfAnchorPeers.String(), channel.String())
+		return
+	}
+
+	node.logger.Infof("Learning about %d configured anchor peers of org (%s) for channel (%s).", len(anchorPeers), orgOfAnchorPeers.String(), channel.String())
+	for _, anchorPeer := range anchorPeers {
+		if anchorPeer.Host == "" {
+			continue
+		}
+		if anchorPeer.Port == 0 {
+			continue
+		}
+		endpoint := net.JoinHostPort(anchorPeer.Host, fmt.Sprintf("%d", anchorPeer.Port))
+		if node.selfNetworkMember().Endpoint == endpoint || node.selfNetworkMember().InternalEndpoint == endpoint {
+			continue
+		}
+		if !bytes.Equal(node.selfOrg, orgOfAnchorPeers) && node.selfNetworkMember().Endpoint == "" {
+			continue
+		}
+		identifier := func() (*discovery.PeerIdentification, error) {
+			remotePeerIdentity, err := node.communication.Handshake(&utils.RemotePeer{Endpoint: endpoint})
+			if err != nil {
+				return nil, err
+			}
+			if bytes.Equal(node.selfOrg, orgOfAnchorPeers) && !bytes.Equal(node.selfOrg, node.secAdvisor.OrgByPeerIdentity(remotePeerIdentity)) {
+				return nil, errors.NewErrorf("Anchor peer %s for channel %s is no in our org %s, but it claimed to be.", endpoint, channel.String(), node.selfOrg.String())
+			}
+			pkiID := node.mcs.GetPKIidOfCert(remotePeerIdentity)
+			if len(pkiID) == 0 {
+				return nil, errors.NewErrorf("Unable to extract pki-id for anchor peer %s from identity cert (%s).", endpoint, remotePeerIdentity.String())
+			}
+			return &discovery.PeerIdentification{PKIid: pkiID, SelfOrg: bytes.Equal(node.selfOrg, node.secAdvisor.OrgByPeerIdentity(remotePeerIdentity))}, nil
+		}
+		node.disc.Connect(utils.NetworkMember{InternalEndpoint: endpoint, Endpoint: endpoint}, identifier)
+	}
+}
+
+func (node *Node) selfNetworkMember() utils.NetworkMember {
+	self := utils.NetworkMember{
+		PKIid:            node.communication.GetPKIid(),
+		Endpoint:         node.conf.ExternalEndpoint,
+		InternalEndpoint: node.conf.InternalEndpoint,
+		Metadata:         []byte{},
+	}
+	if node.disc != nil {
+		self.Metadata = node.disc.Self().Metadata
+	}
+	return self
+}
+
+func (node *Node) start() {
+	go node.syncDiscovery()
+	go node.handlePresumedDead()
+
+	msgSelector := func(msg any) bool {
+		receivedMsg, ok := msg.(utils.ReceivedMessage)
+		if !ok {
+			return false
+		}
+		isConn := receivedMsg.GetSignedGossipMessage().GetConnEstablish() != nil
+		isEmpty := receivedMsg.GetSignedGossipMessage().GetEmpty() != nil
+		isPrivateData := utils.IsPrivateDataMsg(receivedMsg.GetSignedGossipMessage().GossipMessage)
+		return !(isConn || isEmpty || isPrivateData)
+	}
+
+	// 不收 conn establishment、empty 和 private 消息。
+	incMsgs := node.communication.Accept(msgSelector)
+	go node.acceptMessages(incMsgs)
+	node.logger.Infof("Gossip node instance %s started.", node.conf.ID)
+}
+
+func (node *Node) syncDiscovery() {
+	for !node.isStopped() {
+		node.disc.InitiateSync(node.conf.ChannelConfig.PullPeerNum)
+		time.Sleep(node.conf.ChannelConfig.PullInterval)
+	}
+}
+
+func (node *Node) handlePresumedDead() {
+	defer node.stopSignal.Done()
+	for {
+		select {
+		case <-node.toDieChan:
+			return
+		case deadEndpoint := <-node.communication.PresumedDead():
+			node.presumedDead <- deadEndpoint
+		}
+	}
+}
+
+func (node *Node) acceptMessages(incMsgs <-chan utils.ReceivedMessage) {
+	defer node.stopSignal.Done()
+	for {
+		select {
+		case <-node.toDieChan:
+			return
+		case msg := <-incMsgs:
+			node.handleMessage(msg)
+		}
+	}
+}
+
+func (node *Node) handleMessage(m utils.ReceivedMessage) {
+	if node.isStopped() {
+		return
+	}
+
+	if m == nil || m.GetSignedGossipMessage() == nil {
+		return
+	}
+
+	sgm := m.GetSignedGossipMessage()
+
+	node.logger.Debugf("Peer %s send %s to us.", m.GetConnectionInfo().PkiID.String(), sgm.String())
+
+	if !node.validateMsg(m) {
+		node.logger.Warn("The received message is invalid, discarding it.")
+		return
+	}
+
+	// 处理 channel restricted 消息。
+	if utils.IsChannelRestricted(sgm.GossipMessage) {
+		if ch := node.chanState.lookupChannelForReceivedMsg(m); ch == nil {
+			if node.IsInMyOrg(utils.NetworkMember{PKIid: m.GetConnectionInfo().PkiID}) && sgm.GetStateInfo() != nil {
+				// 虽然我不在这个消息要去的 channel 里，但是此消息的创造者与我在同一个组织内，并且这是一个
+				// state info 消息，那么我就要帮助把这个消息转发出去。
+				if node.stateInfoMsgStore.Add(sgm) {
+					node.emitter.Add(utils.NewEmittedGossipMessage(sgm, m.GetConnectionInfo().PkiID.IsNotSameFilter))
+				}
+			}
+			node.logger.Infof("Unable to find the specified channel %s for the channel restricted message.", utils.ChannelToString(sgm.Channel))
+		} else {
+			if sgm.GetLeadershipMsg() != nil {
+				if err := node.validateLeadershipMsg(sgm); err != nil {
+					node.logger.Errorf("Failed handling invalid message: %s.", err.Error())
+					return
+				}
+			}
+			ch.HandleMessage(m)
+		}
+		return
+	}
+
+	if selectOnlyDiscoveryMessages(m) {
+		if sgm.GetMemReq() != nil {
+			_sgm, err := utils.EnvelopeToSignedGossipMessage(sgm.GetMemReq().GetSelfInformation())
+			if err != nil {
+				node.logger.Errorf("Failed get membership message of mem req msg: %s.", err.Error())
+				return
+			}
+			if _sgm.GetAliveMsg() == nil {
+				node.logger.Warnf("The membership message of mem req msg should be an alive message, but got: %s.", _sgm.String())
+				return
+			}
+			if !bytes.Equal(_sgm.GetAliveMsg().Membership.PkiId, m.GetConnectionInfo().PkiID) {
+				node.logger.Errorf("The mem req msg is from %s, but this message is sent by %s.", utils.PKIidType(_sgm.GetAliveMsg().Membership.PkiId).String(), m.GetConnectionInfo().PkiID.String())
+				return
+			}
+		}
+		node.forwardDiscoveryMsg(m)
+	}
+
+	if utils.IsPullMsg(sgm.GossipMessage) && utils.GetPullMsgType(sgm.GossipMessage) == pgossip.PullMsgType_IDENTITY_MSG {
+		node.cs.handleMessage(m)
+	}
+}
+
+// forwardDiscoveryMsg 将收到的有关 discovery 的消息转给 discovery 模块。
+func (node *Node) forwardDiscoveryMsg(msg utils.ReceivedMessage) {
+	node.discAdapter.ReceiveDiscoveryMessage(msg)
+}
+
+// validateMsg 对于 state info 消息，会验证消息中的签名是否合法，而对于其他消息只会验证消息的 tag 是否正确。
+func (node *Node) validateMsg(msg utils.ReceivedMessage) bool {
+	if err := utils.IsTagValid(msg.GetSignedGossipMessage().GossipMessage); err != nil {
+		node.logger.Errorf("Tag of gossip message is invalid: %s.", err.Error())
+		return false
+	}
+
+	if msg.GetSignedGossipMessage().GetStateInfo() != nil {
+		if err := node.validateStateInfoMsg(msg.GetSignedGossipMessage()); err != nil {
+			node.logger.Errorf("State info message is invalid: %s.", err.Error())
+			return false
+		}
+	}
+	return true
+}
+
+func (node *Node) sendGossipBatch(a []any) {
+	msgs2gossip := make([]*utils.EmittedGossipMessage, len(a))
+	for i, e := range a {
+		msgs2gossip[i] = e.(*utils.EmittedGossipMessage)
+	}
+	node.gossipBatch(msgs2gossip)
+}
+
 // gossipBatch 广播以下消息：
 //  1. block
 //  2. state info
@@ -389,12 +696,14 @@ func (node *Node) gossipBatch(msgs []*utils.EmittedGossipMessage) {
 		node.communication.Send(orgMsg.SignedGossipMessage, node.removeSelfLoop(orgMsg, peers2send)...)
 	}
 
-	// 光比剩余的 alive msg。
+	// 广播剩余的 alive msg。
 	for _, msg := range msgs {
 		if msg.GetAliveMsg() == nil {
 			node.logger.Warnf("Unexpected message: %s.", msg.SignedGossipMessage.String())
 			continue
 		}
+		// 如果这个 alive 消息与 node 同属一个组织的，那么 selectByOriginOrg 实际上是 select all，
+		// 否则就将此 alive 消息发送给与 node 同一个组织或者与 alive 同一个组织的节点。
 		selectByOriginOrg := node.peersByOriginalOrPolicy(utils.NetworkMember{PKIid: msg.GetAliveMsg().Membership.PkiId})
 		selector := utils.CombineRoutingFilters(selectByOriginOrg, func(nm utils.NetworkMember) bool {
 			return msg.Filter(nm.PKIid)
@@ -696,10 +1005,13 @@ func (node *Node) disclosurePolicy(remotePeer *utils.NetworkMember) (discovery.S
 		}
 }
 
+// peersByOriginalOrPolicy 传入的参数 peer 节点实际上里面只含有 peer 节点的 pki-id，这个 peer 其实是
+// 某个 alive 消息的创造者。如果这个 alive 消息来自于与 node 同一个组织，那么就将这条消息广播给自己所有
+// 的网络成员；否则，就将这个 alive 消息转发给与 alive 消息同属一个组织或与 node 同属一个组织的节点。
 func (node *Node) peersByOriginalOrPolicy(peer utils.NetworkMember) utils.RoutingFilter {
 	orgOfPeer := node.getOrgOfPeer(peer.PKIid)
 	if len(orgOfPeer) == 0 {
-		node.logger.Warnf("Unable to determine organization of peer: %s.", peer.String())
+		node.logger.Warnf("Unable to determine organization of peer: %s.", peer.PKIid.String())
 		return utils.SelectNonePolicy
 	}
 
