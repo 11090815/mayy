@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"strconv"
@@ -129,7 +128,7 @@ func NewDiscoveryAdapter(c comm.Comm, propagateTimes int, emitter utils.Batching
 			if propagateTimes == 0 {
 				return
 			}
-			emitter.Add(utils.NewEmittedGossipMessage(msg, func(pt utils.PKIidType) bool {return true}))
+			emitter.Add(utils.NewEmittedGossipMessage(msg, func(pt utils.PKIidType) bool { return true }))
 		},
 		forwardFunc: func(msg utils.ReceivedMessage) {
 			if propagateTimes == 0 {
@@ -1044,9 +1043,9 @@ func (gdi *gossipDiscoveryImpl) getDeadMembers() []utils.PKIidType {
 	for id, last := range gdi.aliveLastTS {
 		elapsedNonAliveTime := time.Since(last.lastSeen)
 		if elapsedNonAliveTime > gdi.aliveExpirationTimeout {
-			gdi.logger.Warnf("Haven't heard from %s for %.2f minutes.", id, elapsedNonAliveTime.Minutes())
-			pkiID, _ := hex.DecodeString(id)
-			dead = append(dead, utils.PKIidType(pkiID))
+			gdi.logger.Warnf("Haven't heard from %s for %.2f seconds.", id, elapsedNonAliveTime.Seconds())
+			pkiID := utils.StringToPKIidType(id)
+			dead = append(dead, pkiID)
 		}
 	}
 	return dead
