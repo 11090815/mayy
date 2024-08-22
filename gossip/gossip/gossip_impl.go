@@ -1056,6 +1056,7 @@ func partitionMessages(pred utils.MessageAcceptor, msgs []*utils.EmittedGossipMe
 	return s1, s2
 }
 
+// extractChannels 从给定的所有 EmittedGossipMessage 消息中提取出所有唯一的 channel。
 func extractChannels(msgs []*utils.EmittedGossipMessage) []utils.ChannelID {
 	channels := make([]utils.ChannelID, 0)
 	for _, msg := range msgs {

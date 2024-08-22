@@ -48,14 +48,47 @@ type Config struct {
 	// ExternalEndpoint 是组织外的其他节点可以知道的网络地址。
 	ExternalEndpoint string
 
+	// PullConfig
+	//	1. DigestWaitTime time.Duration
+	//	2. RequestWaitTime time.Duration
+	//	3. ResponseWaitTime time.Duration
 	PullConfig algo.Config
 
+	// ChannelConfig
+	//	1. MaxBlockCountToStore int
+	//	2. PullPeerNum int
+	//	3. PullInterval time.Duration
+	//	4. PublishStateInfoInterval time.Duration
+	//	5. RequestStateInfoInterval time.Duration
+	//	6. BlockExpirationTimeout time.Duration
+	//	7. StateInfoCacheSweepInterval time.Duration
+	//	8. TimeForMembershipTracker time.Duration
+	//	9. LeadershipMsgExpirationTimeout time.Duration
+	//	10. PullEngineConfig algo.Config
 	ChannelConfig channel.Config
 
+	// CommConfig
+	//	1. DialTimeout time.Duration
+	//	2. ConnTimeout time.Duration
+	//	3. RecvBuffSize int
+	//	4. SendBuffSize int
 	CommConfig comm.Config
 
+	// DiscoveryConfig
+	//	1. AliveTimeInterval time.Duration
+	//	2. AliveExpirationTimeout time.Duration
+	//	3. AliveExpirationCheckInterval time.Duration
+	//	4. ReconnectInterval time.Duration
+	//	5. MaxConnectionAttempts int
+	//	6. MsgExpirationFactor int
+	//	7. BootstrapPeers []string
 	DiscoveryConfig discovery.Config
 
+	// ElectionConfig
+	//	1. StartupGracePeriod time.Duration
+	//	2. MembershipSampleInterval time.Duration
+	//	3. LeaderAliveThreshold time.Duration
+	//	4. LeaderElectionDuration time.Duration
 	ElectionConfig election.ElectionConfig
 }
 
