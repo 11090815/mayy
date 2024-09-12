@@ -20,13 +20,13 @@ var (
 )
 
 type TLSConfig struct {
-	config *tls.Config
-	mutex  sync.RWMutex
+	tlsConfig *tls.Config
+	mutex     sync.RWMutex
 }
 
 func NewTLSConfig(config *tls.Config) *TLSConfig {
 	return &TLSConfig{
-		config: config,
+		tlsConfig: config,
 	}
 }
 
@@ -35,8 +35,8 @@ func (tc *TLSConfig) Config() tls.Config {
 	tc.mutex.RLock()
 	defer tc.mutex.RUnlock()
 
-	if tc.config != nil {
-		return *tc.config.Clone()
+	if tc.tlsConfig != nil {
+		return *tc.tlsConfig.Clone()
 	}
 
 	return tls.Config{}
@@ -46,13 +46,13 @@ func (tc *TLSConfig) AddClientRootCA(cert *x509.Certificate) {
 	tc.mutex.Lock()
 	defer tc.mutex.Unlock()
 
-	tc.config.ClientCAs.AddCert(cert)
+	tc.tlsConfig.ClientCAs.AddCert(cert)
 }
 
 func (tc *TLSConfig) SetClientCAs(certPool *x509.CertPool) {
 	tc.mutex.Lock()
 	defer tc.mutex.Unlock()
-	tc.config.ClientCAs = certPool
+	tc.tlsConfig.ClientCAs = certPool
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -115,18 +115,16 @@ func (sc *ServerCredentials) ServerHandshake(rawConn net.Conn) (net.Conn, creden
 	conn, authInfo, err := creds.ServerHandshake(rawConn)
 	if err != nil {
 		l.Errorf("Server TLS handshake failed after %s with error: %s.", time.Since(start), err)
-	} else {
-		l.Debugf("Server TLS handshake completed in %s.", time.Since(start))
 	}
 	return conn, authInfo, nil
 }
 
 func (sc *ServerCredentials) Info() credentials.ProtocolInfo {
-	return credentials.NewTLS(sc.serverConfig.config.Clone()).Info()
+	return credentials.NewTLS(sc.serverConfig.tlsConfig.Clone()).Info()
 }
 
 func (sc *ServerCredentials) Clone() credentials.TransportCredentials {
-	return credentials.NewTLS(sc.serverConfig.config.Clone())
+	return credentials.NewTLS(sc.serverConfig.tlsConfig.Clone())
 }
 
 func (sc *ServerCredentials) OverrideServerName(string) error {

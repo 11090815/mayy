@@ -94,6 +94,7 @@ func (cs *certStore) validateIdentityMsg(msg *utils.SignedGossipMessage) error {
 	return cs.mcs.ValidateIdentity(cert)
 }
 
+// createIdentityMessage 将自己的 PKI-ID 以及 Identity 信息封装成 SignedGossipMessage。
 func (cs *certStore) createIdentityMessage() (*utils.SignedGossipMessage, error) {
 	msg := &pgossip.GossipMessage{
 		Channel: nil,

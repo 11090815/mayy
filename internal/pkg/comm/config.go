@@ -87,6 +87,7 @@ func (ko KeepaliveOptions) ClientKeepaliveOptions() []grpc.DialOption {
 	return clientOpts
 }
 
+// IsServerNil 判断 server 端的 keepalive 配置参数是否设置，如果都没设置，则返回 true，否则返回 false。
 func (ko KeepaliveOptions) IsServerNil() bool {
 	if ko.ServerInterval == 0 && ko.ServerTimeout == 0 && ko.ServerMinInterval == 0 {
 		return true

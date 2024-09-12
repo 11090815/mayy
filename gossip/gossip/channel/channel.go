@@ -161,7 +161,7 @@ type GossipChannel interface {
 	// Self 返回自己当前的状态。
 	Self() *utils.SignedGossipMessage
 
-	// GetPeers 返回一个 peer 节点列表，其中包含节点们的元数据。
+	// GetPeers 返回与自己在同一组织且未离开通道且允许给该节点发送区块的节点。
 	GetPeers() utils.Members
 
 	// PeerFilter 接收一个 SubChannelSelectionRule 并返回一个 RoutingFilter，它只选择匹配给定条件的 peer 节点身份。
@@ -217,6 +217,7 @@ func (gc *gossipChannel) GetPeers() utils.Members {
 		}
 		properties := stateInfo.GetStateInfo().Properties
 		if properties != nil && properties.LeftChannel {
+			// 已经离开 channel 的 member，就不算在内了。
 			continue
 		}
 		member.Properties = stateInfo.GetStateInfo().Properties
@@ -734,7 +735,6 @@ func (gc *gossipChannel) createBlockPuller() pull.PullMediator {
 		}
 		return digestMsg
 	}
-
 	return pull.NewPullMediator(config, adapter, gc.logger)
 }
 

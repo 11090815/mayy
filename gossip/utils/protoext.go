@@ -214,7 +214,7 @@ func AliveMessageToString(am *pgossip.AliveMessage) string {
 	}
 
 	return fmt.Sprintf("{AliveMessage | Endpoint: %s; PKI-ID: %s; IncNum: %d; SeqNum: %d; Identity: %s}",
-		am.Membership.Endpoint, hex.EncodeToString(am.Membership.PkiId), am.Timestamp.IncNum, am.Timestamp.SeqNum, identity)
+		am.Membership.Endpoint, string(am.Membership.PkiId), am.Timestamp.IncNum, am.Timestamp.SeqNum, identity)
 }
 
 func PayloadToString(p *pgossip.Payload) string {

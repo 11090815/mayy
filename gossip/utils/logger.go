@@ -12,6 +12,7 @@ const (
 	ElectionLogger  = "gossip.election"
 	PullLogger      = "gossip.pull"
 	ChannelLogger   = "gossip.channel"
+	GossipLogger    = "gossip"
 )
 
 var (
@@ -33,7 +34,7 @@ func GetLogger(name string, peerID string, level mlog.Level, test bool, printPat
 
 	var l mlog.Logger
 	if test {
-		l = mlog.GetTestLogger(name, level, true)
+		l = mlog.GetTestLogger(name, level, printPath)
 	} else {
 		l = mlog.GetLogger(name, level, printPath)
 	}

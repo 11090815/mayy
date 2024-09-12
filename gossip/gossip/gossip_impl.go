@@ -47,7 +47,7 @@ type SendRule struct {
 }
 
 func (sr SendRule) String() string {
-	return fmt.Sprintf("{SendRule | Timeout: %sms; MinAck: %d; MaxPeers: %d; Channel: %s}", sr.Timeout.Milliseconds(), sr.MinAck, sr.MaxPeers, sr.Channel.String())
+	return fmt.Sprintf("{SendRule | Timeout: %dms; MinAck: %d; MaxPeers: %d; Channel: %s}", sr.Timeout.Milliseconds(), sr.MinAck, sr.MaxPeers, sr.Channel.String())
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -84,6 +84,13 @@ type Node struct {
 	toDieChan  chan struct{}
 }
 
+// NewNode 实例化一个利用 Gossip 协议通信的节点。
+//  1. *Config：用于配置节点中各个通信模块的参数；
+//  2. *grpc.Server：在 GossipStream 方法中担负发送和接收消息的任务；
+//  3. SecurityAdvisor：负责查阅节点所属组织的工作；
+//  4. MessageCryptoService：负责密码方案相关的工作；
+//  5. PeerIdentityType：存储着节点的身份证书信息；
+//  6. PeerSecureDialOpts：指定了建立 grpc 连接时所用到的安全选项；
 func NewNode(conf *Config, s *grpc.Server, sa utils.SecurityAdvisor, mcs utils.MessageCryptoService,
 	selfIdentity utils.PeerIdentityType, secureDialOpts utils.PeerSecureDialOpts, logger mlog.Logger,
 	gossipMetrics *metrics.GossipMetrics, anchorPeerTracker discovery.AnchorPeerTracker, discLogger mlog.Logger) *Node {
@@ -140,7 +147,6 @@ func NewNode(conf *Config, s *grpc.Server, sa utils.SecurityAdvisor, mcs utils.M
 	}
 	self := node.selfNetworkMember()
 	node.disc = discovery.NewDiscoveryService(self, node.discAdapter, node.discSecAdapter, node.disclosurePolicy, discoveryConfig, anchorPeerTracker, discLogger)
-	node.logger.Infof("Creating gossip service with self membership of %s.", node.selfNetworkMember().String())
 
 	node.certPuller = node.createCertStorePuller()
 	node.cs = newCertStore(node.certPuller, node.idMapper, selfIdentity, mcs, logger)
@@ -153,9 +159,13 @@ func NewNode(conf *Config, s *grpc.Server, sa utils.SecurityAdvisor, mcs utils.M
 	go node.start()
 	go node.connect2BootstrapPeers()
 
+	node.logger.Infof("Start gossip service with self membership of %s.", node.selfNetworkMember().String())
+
 	return node
 }
 
+// JoinChan 的第一步就是根据 channelID 加入到指定的 channel 里，然后在新建的 channel 里整一个 blocks puller，
+// 从通道的其他节点那里拉取新的区块（不停地拉）。第二步就是与指定组织内的 anchor 节点们建立连接。
 func (node *Node) JoinChan(joinMsg utils.JoinChannelMessage, channelID utils.ChannelID) {
 	node.chanState.joinChannel(joinMsg, channelID, node.gossipMetrics.MembershipMetrics)
 	for _, org := range joinMsg.Orgs() {
@@ -280,7 +290,7 @@ func (node *Node) Peers() utils.Members {
 	return node.disc.GetMembership()
 }
 
-// PeersOfChannel 返回指定通道内的 peer 节点。
+// PeersOfChannel 返回指定通道内的 peer 节点（已离开指定通道的节点不算）。
 func (node *Node) PeersOfChannel(channelID utils.ChannelID) utils.Members {
 	ch := node.chanState.getGossipChannelByChannelID(channelID)
 	if ch == nil {
@@ -437,9 +447,11 @@ func (node *Node) learnAnchorPeers(channel utils.ChannelID, orgOfAnchorPeers uti
 			continue
 		}
 		endpoint := net.JoinHostPort(anchorPeer.Host, fmt.Sprintf("%d", anchorPeer.Port))
+		// anchor 节点的网络地址不应该与我们的一样。
 		if node.selfNetworkMember().Endpoint == endpoint || node.selfNetworkMember().InternalEndpoint == endpoint {
 			continue
 		}
+		// TODO 为什么必须我们的网络地址也为空的时候，才不去与 anchor 节点进行连接呢？
 		if !bytes.Equal(node.selfOrg, orgOfAnchorPeers) && node.selfNetworkMember().Endpoint == "" {
 			continue
 		}
@@ -492,7 +504,6 @@ func (node *Node) start() {
 	// 不收 conn establishment、empty 和 private 消息。
 	incMsgs := node.communication.Accept(msgSelector)
 	go node.acceptMessages(incMsgs)
-	node.logger.Infof("Gossip node instance %s started.", node.conf.ID)
 }
 
 func (node *Node) syncDiscovery() {

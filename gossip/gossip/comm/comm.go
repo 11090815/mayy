@@ -221,11 +221,16 @@ func (c *commImpl) Probe(peer *utils.RemotePeer) error {
 }
 
 func (c *commImpl) Handshake(peer *utils.RemotePeer) (utils.PeerIdentityType, error) {
-	c.logger.Debugf("Trying to handshake with peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
+	c.logger.Debugf("Start shaking hands with peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
+	// 通过握手获取对方节点信息，这里我们主动给对方节点拨号，所以在这里，我们在拨号选项中，为了安全考虑，
+	// 一般要提供我们（client端）的证书，同时还要给出 ca 的证书，用于验证对方节点（server端）的证书。
+	// 所以这就要求对方（server端）在监听新的连接请求时，需要提供自己（server端）的证书。
 	var dialOpts []grpc.DialOption
 	dialOpts = append(dialOpts, c.secureDialOpts()...)
 	dialOpts = append(dialOpts, c.opts...)
 	dialOpts = append(dialOpts, grpc.WithBlock())
+
+	// 通过 grpc 拨号，获得底层连接。
 	ctx, cancel := context.WithTimeout(context.Background(), c.dialTimeout)
 	defer cancel()
 	cc, err := grpc.DialContext(ctx, peer.Endpoint, dialOpts...)
@@ -234,6 +239,7 @@ func (c *commImpl) Handshake(peer *utils.RemotePeer) (utils.PeerIdentityType, er
 	}
 	defer cc.Close()
 
+	// 将 grpc 的底层连接包装成 gossip client。
 	client := pgossip.NewGossipClient(cc)
 	ctx, cancel = context.WithTimeout(context.Background(), handshakeTimeout)
 	defer cancel()
@@ -245,9 +251,10 @@ func (c *commImpl) Handshake(peer *utils.RemotePeer) (utils.PeerIdentityType, er
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(peer.PKIID, info.PkiID) {
+	if len(peer.PKIID) > 0 && !bytes.Equal(peer.PKIID, info.PkiID) {
 		return nil, errors.NewErrorf("remote peer claims to be a different peer, expected pki-id is %s, but got %s.", peer.PKIID.String(), hex.EncodeToString(info.PkiID))
 	}
+	c.logger.Infof("Finish shaking hands with peer %s@%s.", peer.PKIID.String(), peer.Endpoint)
 	return info.Identity, nil
 }
 
@@ -448,7 +455,7 @@ func (c *commImpl) createConnection(endpoint string, expectedPKIID utils.PKIidTy
 	if c.isStopping() {
 		return nil, errors.NewErrorf("failed to create connection to %s@%s, because the comm instance is closed", expectedPKIID.String(), endpoint)
 	}
-	c.logger.Debugf("Try to create a connection to %s@%s.", expectedPKIID.String(), endpoint)
+	c.logger.Debugf("Create a connection to %s@%s.", expectedPKIID.String(), endpoint)
 
 	// 1. 建立连接
 	dialOpts = append(dialOpts, c.secureDialOpts()...)

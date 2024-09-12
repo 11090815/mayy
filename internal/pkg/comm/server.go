@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/11090815/mayy/common/metrics"
 	"github.com/11090815/mayy/common/errors"
+	"github.com/11090815/mayy/common/metrics"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -35,6 +35,8 @@ type GRPCServer struct {
 	healthServer *health.Server
 }
 
+// NewGRPCServer 提供一个网络地址，例如 "127.0.0.1:"，这样会随机选择一个可用的端口号，然后监听 127.0.0.1:port 地址，
+// 等待外部连接。
 func NewGRPCServer(address string, serverConfig ServerConfig) (*GRPCServer, error) {
 	if address == "" {
 		return nil, errors.NewError("missing address parameter")
@@ -47,6 +49,7 @@ func NewGRPCServer(address string, serverConfig ServerConfig) (*GRPCServer, erro
 	return NewGRPCServerFromListener(listener, serverConfig)
 }
 
+// NewGRPCServerFromListener 创建一个安全的 gRPC 服务。
 func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig) (*GRPCServer, error) {
 	gServer := &GRPCServer{
 		address:  listener.Addr().String(),
@@ -57,9 +60,9 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 	var serverOptions []grpc.ServerOption
 
 	if serverConfig.SecOpts.UseTLS {
-		// 服务端要求使用 TLS 建立安全连接
+		// 服务端要求使用 TLS 建立安全连接。
 		if serverConfig.SecOpts.Key != nil && serverConfig.SecOpts.Certificate != nil {
-			// 确定向客户端出示服务端证书的方式，并设置验证客户端证书的方法
+			// 确定向客户端出示服务端证书的方式，并设置验证客户端证书的方法。
 			tlsCert, err := tls.X509KeyPair(serverConfig.SecOpts.Certificate, serverConfig.SecOpts.Key)
 			if err != nil {
 				listener.Close()
@@ -71,7 +74,7 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 				return &result, nil
 			}
 			gServer.config = &TLSConfig{
-				config: &tls.Config{
+				tlsConfig: &tls.Config{
 					ClientAuth:             tls.RequestClientCert,
 					VerifyPeerCertificate:  serverConfig.SecOpts.VerifyCertificate,
 					GetCertificate:         getTLSCert,
@@ -86,18 +89,18 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 
 			// 为时间同步设置时间偏移量
 			if serverConfig.SecOpts.TimeShift > 0 {
-				gServer.config.config.Time = func() time.Time {
+				gServer.config.tlsConfig.Time = func() time.Time {
 					return time.Now().Add((-1) * serverConfig.SecOpts.TimeShift)
 				}
 			}
 
 			// 设置用于验证客户端证书的 CA 证书
 			if serverConfig.SecOpts.RequireClientCert {
-				gServer.config.config.ClientAuth = tls.RequireAndVerifyClientCert
+				gServer.config.tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 				if len(serverConfig.SecOpts.ClientRootCAs) > 0 {
-					gServer.config.config.ClientCAs = x509.NewCertPool()
+					gServer.config.tlsConfig.ClientCAs = x509.NewCertPool()
 					for _, clientRootCA := range serverConfig.SecOpts.ClientRootCAs {
-						ok := gServer.config.config.ClientCAs.AppendCertsFromPEM(clientRootCA)
+						ok := gServer.config.tlsConfig.ClientCAs.AppendCertsFromPEM(clientRootCA)
 						if !ok {
 							listener.Close()
 							return nil, errors.NewError("failed add client root CA certificate")
@@ -133,15 +136,18 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 	}
 	serverOptions = append(serverOptions, serverConfig.KaOpts.ServerKeepaliveOptions()...)
 
+	// 设置连接超时时间。
 	if serverConfig.ConnectionTimeout <= 0 {
 		serverConfig.ConnectionTimeout = DefaultConnectionTimeout
 	}
 	serverOptions = append(serverOptions, grpc.ConnectionTimeout(serverConfig.ConnectionTimeout))
 
+	// 设置拦截 stream rpc 的钩子。
 	if len(serverConfig.StreamInterceptors) > 0 {
 		serverOptions = append(serverOptions, grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(serverConfig.StreamInterceptors...)))
 	}
 
+	// 设置拦截一元 rpc 的钩子。
 	if len(serverConfig.UnaryInterceptors) > 0 {
 		serverOptions = append(serverOptions, grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(serverConfig.UnaryInterceptors...)))
 	}
@@ -199,7 +205,7 @@ func (gServer *GRPCServer) SetClientRootCAs(clientRootCAs [][]byte) error {
 }
 
 func (gServer *GRPCServer) RequireAndVerifyClientCert() bool {
-	return gServer.config != nil || gServer.config.config.ClientAuth == tls.RequireAndVerifyClientCert
+	return gServer.config != nil && gServer.config.tlsConfig.ClientAuth == tls.RequireAndVerifyClientCert
 }
 
 func (gServer *GRPCServer) Start() error {

@@ -74,9 +74,11 @@ func CreateGRPCLayer() (port int, gRPCServer *comm.GRPCServer, certs *TLSCertifi
 	serverConfig := comm.ServerConfig{
 		ConnectionTimeout: time.Second,
 		SecOpts: comm.SecureOptions{
-			Key:         serverKeyPair.Key(),
-			Certificate: serverKeyPair.Cert(),
-			UseTLS:      true,
+			Key:               serverKeyPair.Key(),
+			Certificate:       serverKeyPair.Cert(),
+			UseTLS:            true,
+			RequireClientCert: true,
+			ClientRootCAs:     [][]byte{ca.CertBytes()},
 		},
 	}
 	gRPCServer, err = comm.NewGRPCServer("127.0.0.1:", serverConfig)

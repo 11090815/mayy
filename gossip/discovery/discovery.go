@@ -244,7 +244,7 @@ type Discovery interface {
 	// InitiateSync 向 peerNum 个节点询问它们所掌握的成员信息，将这些信息同步过来。
 	InitiateSync(peerNum int)
 
-	// Connect 与节点建立连接，同时确认对方与自己是否在同一组织内。
+	// Connect 与节点建立连接，建立连接的方式就是给对方发送一个 membership request，如果发送不了，那就及时建立一个与对方的连接。
 	Connect(member utils.NetworkMember, identifier identifier)
 
 	Stop()
@@ -500,10 +500,11 @@ func (gdi *gossipDiscoveryImpl) InitiateSync(peerNum int) {
 		t = n
 	}
 	aliveMembersAsSlice := gdi.aliveMembership.ToSlice()
-	for _, i := range utils.GetRandomIndices(t, n-1) {
+	for _, i := range utils.GetRandomIndices(t, n-1) { // 随机从自己 n 个邻居中挑 t 个，然后向他们发送 membership request。
 		pulledPeer := aliveMembersAsSlice[i].GetAliveMsg().Membership
 		var internalEndpoint string
 		if aliveMembersAsSlice[i].Envelope.SecretEnvelope != nil {
+			// 如果知道该节点的 internal endpoint，则优先向此地址发送 membership request。
 			internalEndpoint = utils.InternalEndpoint(aliveMembersAsSlice[i].SecretEnvelope)
 		}
 		peers2Send = append(peers2Send, &utils.NetworkMember{

@@ -36,7 +36,9 @@ type Config struct {
 	// SkipBlockVerification 控制是否验证区块消息。
 	SkipBlockVerification bool
 
-	// PublishCertPeriod
+	// PublishCertPeriod gossip 节点在启动时，会在当前时间 now 加上 PublishCertPeriod，得到
+	// includeIdentityPeriod，然后 discovery 在签署 alive 消息时，如果签署时的时间早于
+	// includeIdentityPeriod，则会将关于节点身份证书 的 identity 放到 alive 消息中。
 	PublishCertPeriod time.Duration
 
 	// TLSCerts 存储着 peer 节点的 tls 证书。

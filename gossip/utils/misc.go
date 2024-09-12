@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"fmt"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -191,4 +193,12 @@ func GetStringSliceOrDefault(key string, defVal []string) []string {
 		return val
 	}
 	return defVal
+}
+
+/* ------------------------------------------------------------------------------------------ */
+
+func PrintStackTrace() {
+	buf := make([]byte, 1<<16)
+	n := runtime.Stack(buf, true)
+	fmt.Println(string(buf[:n]))
 }
