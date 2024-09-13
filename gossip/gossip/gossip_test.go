@@ -1,6 +1,7 @@
 package gossip
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"os"
@@ -119,6 +120,30 @@ func stopPeers(peers []*gossipGRPC) {
 	stopping.Wait()
 }
 
+func checkPeersMembership(t *testing.T, peers []*gossipGRPC, n int) func() bool {
+	return func() bool {
+		for _, peer := range peers {
+			if len(peer.Peers()) != n {
+				return false
+			}
+			for _, p := range peer.Peers() {
+				require.NotNil(t, p.InternalEndpoint)
+				require.NotEmpty(t, p.Endpoint)
+			}
+		}
+		return true
+	}
+}
+
+func metadataOfPeer(members []utils.NetworkMember, endpoint string) []byte {
+	for _, member := range members {
+		if member.InternalEndpoint == endpoint {
+			return member.Metadata
+		}
+	}
+	return nil
+}
+
 /* ------------------------------------------------------------------------------------------ */
 
 func createDataMsg(seqNum uint64, data []byte, channel utils.ChannelID) *pgossip.GossipMessage {
@@ -225,6 +250,8 @@ func newGossipInstanceWithGrpcMcsMetrics(id int, port int, gRPCServer *comm.GRPC
 			RequestStateInfoInterval:       time.Second,
 			TimeForMembershipTracker:       5 * time.Second,
 			LeadershipMsgExpirationTimeout: channel.DefaultLeadershipMsgExpirationTimeout,
+			BlockExpirationTimeout:         100 * time.Second,
+			StateInfoCacheSweepInterval:    5 * time.Second,
 		},
 		CommConfig: gossipcomm.Config{
 			DialTimeout:  gossipcomm.DefaultDialTimeout,
@@ -233,7 +260,7 @@ func newGossipInstanceWithGrpcMcsMetrics(id int, port int, gRPCServer *comm.GRPC
 			SendBuffSize: gossipcomm.DefaultSendBuffSize,
 		},
 	}
-	identity := utils.PeerIdentityType(conf.InternalEndpoint)
+	identity := utils.PeerIdentityType(conf.ID)
 	logger := utils.GetLogger(utils.GossipLogger, conf.ID, mlog.DebugLevel, true, true)
 	node := NewNode(conf, gRPCServer.Server(), &orgCryptoService{}, mcs, identity, secureDialOpts, logger, metrics, nil, logger.With("module", utils.DiscoveryLogger))
 	go func() {
@@ -457,6 +484,175 @@ func TestPull(t *testing.T) {
 	}
 	waitUntilOrFailBlocking(t, stop, "waiting to stop all peers")
 	t.Logf("Took %fs", time.Since(startTime).Seconds())
-	
+
 	atomic.StoreInt32(&stopped, 1)
+}
+
+func TestConnectToAnchorPeers(t *testing.T) {
+	stopped := int32(0)
+	go waitForTestCompletion(&stopped, t)
+
+	n := 8
+	anchorPeercount := 3
+
+	var ports []int
+	var grpcs []*comm.GRPCServer
+	var certs []*utils.TLSCertificates
+	var secDialOpts []utils.PeerSecureDialOpts
+
+	joinMsg := &joinChanMsg{orgs2anchorPeers: map[string][]utils.AnchorPeer{orgInChannelA.String(): {}}}
+	for i := 0; i < anchorPeercount; i++ {
+		port, grpc, cert, secDialOpt, _ := utils.CreateGRPCLayer()
+		ports = append(ports, port)
+		grpcs = append(grpcs, grpc)
+		certs = append(certs, cert)
+		secDialOpts = append(secDialOpts, secDialOpt)
+		anchorPeer := utils.AnchorPeer{Host: "localhost", Port: port}
+		joinMsg.orgs2anchorPeers[orgInChannelA.String()] = append(joinMsg.orgs2anchorPeers[orgInChannelA.String()], anchorPeer)
+	}
+
+	nodes := make([]*gossipGRPC, n)
+	wg := sync.WaitGroup{}
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			nodes[i] = newGossipInstanceCreateGRPC(i+anchorPeercount, 100)
+			nodes[i].JoinChan(joinMsg, channelA)
+			nodes[i].UpdateLedgerHeight(1, channelA)
+			wg.Done()
+		}(i)
+	}
+	waitUntilOrFailBlocking(t, wg.Wait, "waiting until all nodes join the channel")
+
+	index := r.Intn(anchorPeercount)
+	anchorPeer := newGossipInstanceWithGRPC(index, ports[index], grpcs[index], certs[index], secDialOpts[index], 100)
+	anchorPeer.JoinChan(joinMsg, channelA)
+	anchorPeer.UpdateLedgerHeight(1, channelA)
+	defer anchorPeer.Stop()
+	waitUntilOrFail(t, checkPeersMembership(t, nodes, n), "waiting for peers to form membership view")
+
+	channelMembership := func() bool {
+		for _, peer := range nodes {
+			if len(peer.PeersOfChannel(channelA)) != n {
+				return false
+			}
+		}
+		return true
+	}
+	waitUntilOrFail(t, channelMembership, "waiting for peers to form channel membership view")
+
+	stop := func() {
+		stopPeers(nodes)
+	}
+	waitUntilOrFailBlocking(t, stop, "waiting for gossip instances to stop")
+	atomic.StoreInt32(&stopped, 1)
+}
+
+func TestMembership(t *testing.T) {
+	stopped := int32(0)
+	go waitForTestCompletion(&stopped, t)
+	n := 10
+
+	port0, grpc0, certs0, secDialOpts0, _ := utils.CreateGRPCLayer()
+	boot := newGossipInstanceWithGRPC(0, port0, grpc0, certs0, secDialOpts0, 100)
+	boot.JoinChan(&joinChanMsg{}, channelA)
+	boot.UpdateLedgerHeight(1, channelA)
+
+	peers := make([]*gossipGRPC, n)
+	wg := sync.WaitGroup{}
+	wg.Add(n - 1)
+	for i := 1; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			p := newGossipInstanceCreateGRPC(i, 100, port0)
+			peers[i-1] = p
+			p.JoinChan(&joinChanMsg{}, channelA)
+			p.UpdateLedgerHeight(1, channelA)
+		}(i)
+	}
+
+	portn, grpcn, certsn, secDialOptsn, _ := utils.CreateGRPCLayer()
+	lastPeer := fmt.Sprintf("localhost:%d", portn)
+	pn := newGossipInstanceWithGRPC(n, portn, grpcn, certsn, secDialOptsn, 100, port0)
+	peers[n-1] = pn
+	pn.JoinChan(&joinChanMsg{}, channelA)
+	pn.UpdateLedgerHeight(1, channelA)
+	waitUntilOrFailBlocking(t, wg.Wait, "waiting for all peers to join the channel")
+
+	seeAllNeighbours := func() bool {
+		for i := 0; i < n; i++ {
+			neighbourCount := len(peers[i].Peers())
+			if neighbourCount != n {
+				return false
+			}
+		}
+		return true
+	}
+	waitUntilOrFail(t, seeAllNeighbours, "waiting for all peers to form the membership")
+
+	peers[n-1].UpdateMetadata([]byte("la la la")) // 更新 metadata 后，会周期性的向其他节点广播自己的 alive 消息，里面包含自己的 metadata 信息。
+	metaDataUpdated := func() bool {
+		if !bytes.Equal([]byte("la la la"), metadataOfPeer(boot.Peers(), lastPeer)) {
+			return false
+		}
+		for i := 0; i < n-1; i++ {
+			if !bytes.Equal([]byte("la la la"), metadataOfPeer(peers[i].Peers(), lastPeer)) {
+				return false
+			}
+		}
+		return true
+	}
+
+	waitUntilOrFail(t, metaDataUpdated, "wait until metadata update is got propagated")
+	stop := func() {
+		stopPeers(peers)
+	}
+	waitUntilOrFailBlocking(t, stop, "waiting for gossip instances to stop")
+	atomic.StoreInt32(&stopped, 1)
+}
+
+func TestNoMessagesSelfLoop(t *testing.T) {
+	port0, grpc0, certs0, secDialOpts0, _ := utils.CreateGRPCLayer()
+	boot := newGossipInstanceWithGRPC(0, port0, grpc0, certs0, secDialOpts0, 100)
+	boot.JoinChan(&joinChanMsg{}, channelA)
+	boot.UpdateLedgerHeight(1, channelA)
+	
+	peer := newGossipInstanceCreateGRPC(1, 100, port0)
+	peer.JoinChan(&joinChanMsg{}, channelA)
+	peer.UpdateLedgerHeight(1, channelA)
+	waitUntilOrFail(t, checkPeersMembership(t, []*gossipGRPC{peer}, 1), "waiting for peers to form membership")
+	_, commCh := boot.Accept(func(a any) bool {
+		return a.(utils.ReceivedMessage).GetSignedGossipMessage().GetDataMsg() != nil
+	}, true)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func(ch <-chan utils.ReceivedMessage) {
+		defer wg.Done()
+		for {
+			select {
+			case msg := <- ch:
+				{
+					if msg.GetSignedGossipMessage().GetDataMsg() != nil {
+						t.Errorf("Should not receive data message back, but got %s", msg.GetSignedGossipMessage().String())
+					}
+				}
+			case <-time.After(2 * time.Second):
+				return
+			}
+		}
+	}(commCh)
+
+	peerCh, _ := peer.Accept(shouldBeDataMsg, false)
+	go func(ch <-chan *pgossip.GossipMessage) {
+		defer wg.Done()
+		<-ch
+	}(peerCh)
+
+	boot.Gossip(createDataMsg(2, []byte{}, channelA))
+	waitUntilOrFailBlocking(t, wg.Wait, "waiting for everyone to get the message")
+	stop := func() {
+		stopPeers([]*gossipGRPC{boot, peer})
+	}
+	waitUntilOrFailBlocking(t, stop, "waiting for gossip instances to stop")
 }

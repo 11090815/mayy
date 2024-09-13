@@ -41,7 +41,7 @@ type Config struct {
 	// includeIdentityPeriod，则会将关于节点身份证书 的 identity 放到 alive 消息中。
 	PublishCertPeriod time.Duration
 
-	// TLSCerts 存储着 peer 节点的 tls 证书。
+	// TLSCerts 存储着 peer 节点的 tls 证书，在 communicate authenticate 时用于验证 client-server 端的身份。
 	TLSCerts *utils.TLSCertificates
 
 	// InternalEndpoint 是同组织内其他节点知道的网络地址。

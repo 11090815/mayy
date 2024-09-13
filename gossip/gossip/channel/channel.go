@@ -547,7 +547,7 @@ type Adapter interface {
 }
 
 type gossipChannel struct {
-	adapter Adapter
+	adapter Adapter // 由 Node 实现。
 
 	// 状态信息
 	selfOrg                utils.OrgIdentityType
@@ -625,7 +625,8 @@ func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*pgo
 		},
 	}
 	m := &pgossip.GossipMessage{
-		Tag: pgossip.GossipMessage_CHAN_OR_ORG,
+		Channel: gc.channelID,
+		Tag:     pgossip.GossipMessage_CHAN_OR_ORG,
 		Content: &pgossip.GossipMessage_StateInfo{
 			StateInfo: stateInfoMsg,
 		},

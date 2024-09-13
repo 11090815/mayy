@@ -461,7 +461,7 @@ func (node *Node) learnAnchorPeers(channel utils.ChannelID, orgOfAnchorPeers uti
 				return nil, err
 			}
 			if bytes.Equal(node.selfOrg, orgOfAnchorPeers) && !bytes.Equal(node.selfOrg, node.secAdvisor.OrgByPeerIdentity(remotePeerIdentity)) {
-				return nil, errors.NewErrorf("Anchor peer %s for channel %s is no in our org %s, but it claimed to be.", endpoint, channel.String(), node.selfOrg.String())
+				return nil, errors.NewErrorf("Anchor peer %s for channel %s is not in our org %s, but it claimed to be.", endpoint, channel.String(), node.selfOrg.String())
 			}
 			pkiID := node.mcs.GetPKIidOfCert(remotePeerIdentity)
 			if len(pkiID) == 0 {
