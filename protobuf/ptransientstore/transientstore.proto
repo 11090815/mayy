@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package ptransientstore;
+
+option go_package = "github.com/11090815/mayy/protobuf/ptransientstore";
+
+import "pledger/rwset/rwset.proto";
+import "ppeer/collection.proto";
+
+message TxPvtReadWriteSetWithConfigInfo {
+    uint64 endorsed_at = 1;
+    rwset.TxPvtReadWriteSet pvt_rwset = 2;
+    map<string, ppeer.CollectionConfigPackage> collection_configs = 3;
+}
+
+// protoc --proto_path=. --proto_path=$MAYY_HOME/protobuf --proto_path=$MAYY_HOME/protobuf/ppeer --go_out=,paths=source_relative:. transientstore.proto
