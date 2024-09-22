@@ -496,7 +496,7 @@ func assertMembership(t *testing.T, instances []*gossipInstance, expectedNum int
 	require.NoError(t, ctx.Err(), msg)
 }
 
-func stopInstances(t *testing.T, instances []*gossipInstance) {
+func stopInstances(instances []*gossipInstance) {
 	wg := &sync.WaitGroup{}
 	for _, inst := range instances {
 		wg.Add(1)
@@ -825,7 +825,7 @@ func TestUpdate(t *testing.T) {
 		return true
 	}
 	waitUntilOrPanic(t, checkMembership)
-	stopInstances(t, instances)
+	stopInstances(instances)
 }
 
 func TestInitiateSync(t *testing.T) {
@@ -851,7 +851,7 @@ func TestInitiateSync(t *testing.T) {
 	time.Sleep(defaultTestConfig.AliveExpirationTimeout * 4)
 	assertMembership(t, instances, nodeNum-1, "9")
 	atomic.StoreInt32(&toDie, 1)
-	stopInstances(t, instances)
+	stopInstances(instances)
 }
 
 func TestSelf(t *testing.T) {
@@ -881,7 +881,7 @@ func TestExpiration(t *testing.T) {
 	instances[nodeNum-2].Stop()
 	assertMembership(t, instances[:nodeNum-2], nodeNum-3, "2")
 
-	stopInstances(t, instances[:nodeNum-2])
+	stopInstances(instances[:nodeNum-2])
 }
 
 func TestGetFullMembership(t *testing.T) {
@@ -909,5 +909,5 @@ func TestGetFullMembership(t *testing.T) {
 		}
 	}
 
-	stopInstances(t, instances)
+	stopInstances(instances)
 }

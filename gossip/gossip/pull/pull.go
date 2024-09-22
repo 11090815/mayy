@@ -278,6 +278,10 @@ func (pm *pullMediator) SendReq(endpoint string, items []string, nonce uint64) {
 		pm.logger.Errorf("Failed creating signed Data Request message: %s.", err.Error())
 		return
 	}
+	if len(pm.peersWithEndpoints(endpoint)) == 0 {
+		pm.logger.Debug("No peer to send Request message.")
+		return
+	}
 	remotePeer := pm.peersWithEndpoints(endpoint)[0]
 	pm.logger.Debugf("Send %s request %s to %s@%s.", pm.config.MsgType, utils.DataRequestToString(reqMsg.GetDataReq()), remotePeer.PKIID.String(), remotePeer.Endpoint)
 	pm.Sender.Send(sgm, remotePeer)

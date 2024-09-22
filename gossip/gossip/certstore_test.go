@@ -40,7 +40,7 @@ func (ncs *naiveCryptoService) Expiration(peerIdentity utils.PeerIdentityType) (
 		ncs.expirationTimesLock.RLock()
 		defer ncs.expirationTimesLock.RUnlock()
 	}
-	if exp, exists := ncs.expirationTimes[peerIdentity.String()]; exists {
+	if exp, exists := ncs.expirationTimes[string(peerIdentity)]; exists {
 		return exp, nil
 	}
 	return time.Now().Add(time.Hour), nil
@@ -50,7 +50,7 @@ func (ncs *naiveCryptoService) VerifyByChannel(_ utils.ChannelID, peerIdentity u
 	if ncs.allowedPkiIDS == nil {
 		return nil
 	}
-	if _, allowed := ncs.allowedPkiIDS[peerIdentity.String()]; allowed {
+	if _, allowed := ncs.allowedPkiIDS[string(peerIdentity)]; allowed {
 		return nil
 	}
 	return errors.NewError("invalid")

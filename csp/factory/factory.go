@@ -33,6 +33,8 @@ var (
 		HashFamily:    "SHA2",
 		ReadOnly:      false,
 	}
+
+	mutex = sync.Mutex{}
 )
 
 type CSPFactory struct {
@@ -94,6 +96,8 @@ func GetCSP() (csp.CSP, error) {
 	}
 	switch defaultFactory.opts.Kind {
 	case "sw", "SW", "Sw", "sW":
+		mutex.Lock()
+		defer mutex.Unlock()
 		if csp, ok := defaultFactory.csps["sw"]; ok {
 			return csp, nil
 		}

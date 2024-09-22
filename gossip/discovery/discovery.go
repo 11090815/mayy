@@ -841,6 +841,7 @@ func (gdi *gossipDiscoveryImpl) sendMembershipResponse(targetMember *pgossip.Mem
 	}
 	memResp := gdi.createMembershipResponse(aliveMsg, targetPeer)
 	if memResp == nil {
+		gdi.adapter.CloseConn(targetPeer)
 		return
 	}
 
@@ -881,7 +882,7 @@ func (gdi *gossipDiscoveryImpl) sendUntilAcked(peer *utils.NetworkMember, msg *u
 		if _, timeoutErr := subscription.Listen(); timeoutErr == nil {
 			return
 		} else {
-			gdi.logger.Error("Timeout expired.")
+			gdi.logger.Errorf("Timeout expired, couldn't receive acknowledgement from %s.", peer.PKIid.String())
 		}
 		time.Sleep(gdi.reconnectInterval)
 	}
@@ -1164,7 +1165,6 @@ func (gdi *gossipDiscoveryImpl) aliveMsgAndInternalEndpoint() (*pgossip.GossipMe
 
 func (gdi *gossipDiscoveryImpl) expireDeadMembers(dead []utils.PKIidType) {
 	var deadMembersToExpire []utils.NetworkMember
-
 	gdi.mutex.Lock()
 	for _, pkiID := range dead {
 		lastTS, isAlive := gdi.aliveLastTS[pkiID.String()]

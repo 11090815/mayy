@@ -804,17 +804,6 @@ func (node *Node) isStopped() bool {
 	return atomic.LoadInt32(&node.stopFlag) == int32(1)
 }
 
-// newDiscoveryAdapter 根据 node 配置文件信息实例化一个 discovery adapter，discovery 的广播和转播功能由 node
-// 的 BatchingEmitter 定义。
-func (node *Node) newDiscoveryAdapter() discovery.DiscoveryAdapter {
-	return discovery.NewDiscoveryAdapter(node.communication, node.conf.PropagateIterations, node.emitter, node.presumedDead, node.disclosurePolicy)
-}
-
-// newDiscoverySecurityAdapter 新建一个针对 discovery 模块的 security 适配器，用于签署和验证 alive 消息。
-func (node *Node) newDiscoverySecurityAdapter() discovery.DiscoverySecurityAdapter {
-	return discovery.NewDiscoverySecurityAdapter(node.selfIdentity, node.includeIdentityPeriod, node.idMapper, node.mcs, node.logger)
-}
-
 // createCertStorePuller 创建一个 cert puller，根据配置文件信息，调整 pull interval 等参数配置，
 // pull adapter 里的 MsgConsumer 的功能是将 peer 的 pki-id 和 identity 保存到 idMapper 里，且
 // pull adapter 里的 EgressDigestFilter 用 sameOrgOrOurOrgPullFilter 方法定义。
@@ -1077,7 +1066,7 @@ func extractChannels(msgs []*utils.EmittedGossipMessage) []utils.ChannelID {
 		samePred := func(a, b any) bool {
 			return bytes.Equal(a.(utils.ChannelID), b.(utils.ChannelID))
 		}
-		if utils.IndexInSlice(channels, msg.Channel, samePred) == -1 {
+		if utils.IndexInSlice(channels, utils.ChannelID(msg.Channel), samePred) == -1 {
 			channels = append(channels, msg.Channel)
 		}
 	}

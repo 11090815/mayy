@@ -364,7 +364,7 @@ func (c *commImpl) IdentitySwitch() <-chan utils.PKIidType {
 }
 
 func (c *commImpl) CloseConn(peer *utils.RemotePeer) {
-	c.disconnect(peer.PKIID)
+	c.connStore.closeConnByPKIid(peer.PKIID)
 }
 
 func (c *commImpl) GetPKIid() utils.PKIidType {
